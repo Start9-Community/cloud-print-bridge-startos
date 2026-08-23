@@ -1,18 +1,18 @@
 import { IMPOSSIBLE, VersionInfo } from '@start9labs/start-sdk'
 
 export const current = VersionInfo.of({
-  version: '0.5.0:6',
+  version: '0.5.0:7',
   releaseNotes: {
     en_US:
-      'Fixes duplex orientation for PDF page-selection jobs by first creating a normalized selected-page PDF and then using the proven full-document PWG Raster printing path.',
+      'Hardens the StartOS package for release with updated documentation, package metadata, licensing information, repository integration, and multi-architecture build support.',
     es_ES:
-      'Corrige la orientación dúplex de los trabajos PDF con selección de páginas creando primero un PDF normalizado con las páginas seleccionadas y utilizando después la ruta de impresión PWG Raster de documento completo ya validada.',
+      'Refuerza el paquete de StartOS para su publicación con documentación, metadatos del paquete, información de licencias, integración del repositorio y compatibilidad de compilación para múltiples arquitecturas actualizadas.',
     de_DE:
-      'Behebt die Duplex-Ausrichtung bei PDF-Druckaufträgen mit Seitenauswahl, indem zuerst eine normalisierte PDF-Datei mit den ausgewählten Seiten erstellt und anschließend der bewährte PWG-Raster-Druckpfad für vollständige Dokumente verwendet wird.',
+      'Härtet das StartOS-Paket für die Veröffentlichung mit aktualisierter Dokumentation, Paket-Metadaten, Lizenzinformationen, Repository-Integration und Unterstützung für Builds auf mehreren Architekturen.',
     pl_PL:
-      'Naprawia orientację druku dwustronnego dla zadań PDF z wyborem stron, najpierw tworząc znormalizowany plik PDF zawierający wybrane strony, a następnie korzystając ze sprawdzonej ścieżki drukowania całego dokumentu w formacie PWG Raster.',
+      'Przygotowuje pakiet StartOS do wydania poprzez aktualizację dokumentacji, metadanych pakietu, informacji licencyjnych, integracji repozytorium i obsługi kompilacji dla wielu architektur.',
     fr_FR:
-      'Corrige l’orientation recto verso des tâches PDF avec sélection de pages en créant d’abord un PDF normalisé contenant les pages sélectionnées, puis en utilisant le chemin d’impression PWG Raster déjà validé pour les documents complets.',
+      'Renforce le paquet StartOS en vue de sa publication avec une documentation, des métadonnées, des informations de licence, une intégration du dépôt et une prise en charge multi-architecture mises à jour.',
   },
   migrations: {
     up: async ({ effects }) => {},

@@ -1,0 +1,12 @@
+.git
+node_modules
+javascript
+*.s9pk
+*.pwg
+*.urf
+*.pre-*
+office-tests
+text-test.txt
+pwg-test.pdf
+brother-raster.ppd
+dev-backups/

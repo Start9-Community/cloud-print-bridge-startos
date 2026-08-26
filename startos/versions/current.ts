@@ -1,18 +1,18 @@
 import { IMPOSSIBLE, VersionInfo } from '@start9labs/start-sdk'
 
 export const current = VersionInfo.of({
-  version: '0.5.0:7',
+  version: '0.6.0:0',
   releaseNotes: {
     en_US:
-      'Hardens the StartOS package for release with updated documentation, package metadata, licensing information, repository integration, and multi-architecture build support.',
+      'Adds a Discover Printers action that scans configured IPv4 networks for IPP printers and displays their printer name, persistent UUID, and IPP URI for easier first-time setup.',
     es_ES:
-      'Refuerza el paquete de StartOS para su publicación con documentación, metadatos del paquete, información de licencias, integración del repositorio y compatibilidad de compilación para múltiples arquitecturas actualizadas.',
+      'Añade una acción Descubrir impresoras que analiza las redes IPv4 configuradas en busca de impresoras IPP y muestra el nombre de la impresora, su UUID persistente y la URI IPP para facilitar la configuración inicial.',
     de_DE:
-      'Härtet das StartOS-Paket für die Veröffentlichung mit aktualisierter Dokumentation, Paket-Metadaten, Lizenzinformationen, Repository-Integration und Unterstützung für Builds auf mehreren Architekturen.',
+      'Fügt eine Aktion zur Druckersuche hinzu, die konfigurierte IPv4-Netzwerke nach IPP-Druckern durchsucht und Druckername, persistente UUID und IPP-URI für eine einfachere Ersteinrichtung anzeigt.',
     pl_PL:
-      'Przygotowuje pakiet StartOS do wydania poprzez aktualizację dokumentacji, metadanych pakietu, informacji licencyjnych, integracji repozytorium i obsługi kompilacji dla wielu architektur.',
+      'Dodaje akcję wykrywania drukarek, która skanuje skonfigurowane sieci IPv4 w poszukiwaniu drukarek IPP i wyświetla nazwę drukarki, trwały identyfikator UUID oraz URI IPP, ułatwiając pierwszą konfigurację.',
     fr_FR:
-      'Renforce le paquet StartOS en vue de sa publication avec une documentation, des métadonnées, des informations de licence, une intégration du dépôt et une prise en charge multi-architecture mises à jour.',
+      'Ajoute une action de découverte des imprimantes qui analyse les réseaux IPv4 configurés à la recherche d’imprimantes IPP et affiche leur nom, leur UUID persistant et leur URI IPP afin de faciliter la configuration initiale.',
   },
   migrations: {
     up: async ({ effects }) => {},

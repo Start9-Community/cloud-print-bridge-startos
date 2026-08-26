@@ -52,15 +52,30 @@ Configures:
 - copy count
 - Inbox polling interval
 
+### Discover Printers
+
+The **Discover Printers** action scans one or more IPv4 networks for
+reachable IPP printers. It does not require a printer UUID in advance.
+
+For each discovered printer, the action displays its advertised printer
+name, persistent IPP UUID, and usable IPP URI. The UUID and URI are
+copyable from the StartOS action result.
+
+Use this action during first-time setup to learn the UUID of the printer
+you want Cloud Print Bridge to track.
+
 ## Printer Modes
 
 ### Manual IPP URL
 
 Cloud Print Bridge sends jobs to the configured IPP URL.
 
-### Automatic UUID Discovery
+### Locate Printer by UUID
 
-Cloud Print Bridge can search one or more configured IPv4 networks for an IPP printer whose persistent UUID matches the configured UUID. This allows the printer to be rediscovered after an address change.
+After using **Discover Printers** to obtain the desired printer's
+persistent UUID, Cloud Print Bridge can search one or more configured
+IPv4 networks for that UUID. This allows the same physical printer to be
+located again after its IP address changes.
 
 A manual IPP URL may also be retained as a fallback or last-known address.
 
@@ -117,7 +132,7 @@ On service startup, pre-existing files in `Processing` are treated as orphaned/u
 
 - maximum source file size: 100 MiB
 - maximum PDF page count: 200
-- maximum combined UUID-discovery scan: 4096 unique IPv4 hosts
+- maximum combined printer-discovery scan: 4096 unique IPv4 hosts
 - printer upload uses streamed IPP transfer rather than constructing one giant HTTP request
 
 ## Backups
@@ -142,12 +157,12 @@ Nextcloud is required and provides the WebDAV print queue. Cloud Print Bridge re
 
 ## Limitations and Differences
 
-1. Printer UUID discovery currently scans IPv4 only.
+1. Printer discovery and UUID-based location currently scan IPv4 only.
 2. The printer must be reachable from the StartOS server over IPP.
 3. PDF filename page-selection directives apply only to native PDF jobs.
 4. Office conversion fidelity depends on LibreOffice and the fonts installed in the Cloud Print Bridge image.
 5. A job moved to `Failed` after an uncertain printer result must be checked physically before manual retry.
-6. Cloud Print Bridge has no web UI; normal operation uses Nextcloud folders, the Configure action, and StartOS logs.
+6. Cloud Print Bridge has no web UI; normal operation uses Nextcloud folders, the Configure and Discover Printers actions, and StartOS logs.
 
 ## Build
 
@@ -190,6 +205,7 @@ startos_managed_env_vars:
   - NEXTCLOUD_HOST_HEADER
 actions:
   - configure
+  - discover-printers
 queue_folders:
   - Cloud Print/Inbox
   - Cloud Print/Processing

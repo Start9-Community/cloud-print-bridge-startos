@@ -28,11 +28,11 @@ const inputSpec = InputSpec.of({
   printerMode: Value.select({
     name: 'Printer Mode',
     description:
-      'Choose a manually configured IPP URL or rediscover a printer by its persistent IPP UUID.',
+      'Choose a manually configured IPP URL or locate a known printer by its persistent IPP UUID. Use Discover Printers to find available printer UUIDs.',
     default: 'manual',
     values: {
       manual: 'Manual IPP URL',
-      'uuid-discovery': 'Automatic UUID Discovery',
+      'uuid-discovery': 'Locate Printer by UUID',
     },
   }),
 
@@ -48,7 +48,7 @@ const inputSpec = InputSpec.of({
   printerDiscoveryCidr: Value.text({
     name: 'Printer Discovery Network(s)',
     description:
-      'One or more IPv4 networks to search for the printer. Separate multiple networks with commas, for example 192.168.1.0/24 or 192.168.1.0/24, 10.20.30.0/24.',
+      'One or more IPv4 networks to search. Use the Discover Printers action to find available IPP printers and their UUIDs. Separate multiple networks with commas, for example 192.168.1.0/24 or 192.168.1.0/24, 10.20.30.0/24.',
     required: false,
     default: '',
     masked: false,
@@ -57,7 +57,7 @@ const inputSpec = InputSpec.of({
   printerUuid: Value.text({
     name: 'Printer UUID',
     description:
-      'Persistent IPP printer UUID, for example urn:uuid:12345678-1234-1234-1234-123456789abc.',
+      'Persistent IPP printer UUID. Use the Discover Printers action to obtain this value, for example urn:uuid:12345678-1234-1234-1234-123456789abc.',
     required: false,
     default: '',
     masked: false,

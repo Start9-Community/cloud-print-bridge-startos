@@ -864,6 +864,101 @@ def discover_printer_by_uuid(discovery_networks, target_uuid):
 
 
 
+
+def discover_all_printers(discovery_networks):
+    """
+    Discover IPP printers on the configured IPv4 network(s).
+
+    Unlike discover_printer_by_uuid(), this does not require a known UUID.
+    It probes IPP hosts, queries printer identity attributes, and returns
+    one entry per discovered physical printer.
+    """
+    ipp_hosts = scan_ipp_hosts(discovery_networks)
+
+    printers = []
+    seen_printers = set()
+
+    for host in ipp_hosts:
+        for path in ("/ipp/print", "/ipp"):
+            printer_uri = (
+                f"ipp://{host}:{PRINTER_DISCOVERY_PORT}{path}"
+            )
+
+            try:
+                identity = query_printer_identity(printer_uri)
+            except Exception:
+                continue
+
+            if not identity:
+                continue
+
+            printer_uuid = str(
+                identity.get("uuid", "") or ""
+            ).strip()
+
+            printer_name = str(
+                identity.get("name", "") or ""
+            ).strip()
+
+            printer_info = str(
+                identity.get("info", "") or ""
+            ).strip()
+
+            printer_model = str(
+                identity.get("model", "") or ""
+            ).strip()
+
+            # Prefer UUID as the persistent identity. If a printer does
+            # not advertise one, use the host so /ipp/print and /ipp
+            # do not produce duplicate entries for the same device.
+            if printer_uuid:
+                dedupe_key = (
+                    "uuid",
+                    printer_uuid.lower(),
+                )
+            else:
+                dedupe_key = (
+                    "host",
+                    host,
+                )
+
+            if dedupe_key in seen_printers:
+                break
+
+            seen_printers.add(dedupe_key)
+
+            display_name = (
+                printer_name
+                or printer_info
+                or printer_model
+                or host
+            )
+
+            printers.append(
+                {
+                    "name": display_name,
+                    "model": printer_model,
+                    "info": printer_info,
+                    "uuid": printer_uuid,
+                    "uri": printer_uri,
+                    "host": host,
+                }
+            )
+
+            # The first responding IPP path is preferred. /ipp/print
+            # is tested before /ipp to match the existing runtime
+            # discovery behavior.
+            break
+
+    printers.sort(
+        key=lambda printer: (
+            printer["name"].lower(),
+            printer["uri"],
+        )
+    )
+
+    return printers
+
 def resolve_printer_uri(config):
     mode = str(
         config.get("printerMode", "manual")

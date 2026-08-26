@@ -18,7 +18,8 @@ RUN pip install --no-cache-dir Pillow reportlab==4.4.2
 WORKDIR /app
 
 COPY app/worker.py /app/worker.py
+COPY app/discover_printers.py /app/discover_printers.py
 
-RUN chmod 0555 /app/worker.py
+RUN chmod 0555 /app/worker.py /app/discover_printers.py
 
 ENTRYPOINT ["python3", "/app/worker.py"]

@@ -11,7 +11,7 @@ Cloud Print Bridge:
 - converts common document formats when necessary
 - submits jobs directly to an IPP printer
 - tracks jobs through `Inbox`, `Processing`, `Printed`, and `Failed`
-- supports manual printer URLs or UUID-based rediscovery
+- supports manual printer URLs, first-time IPP printer discovery, and UUID-based rediscovery
 
 It does not provide a web interface.
 
@@ -57,9 +57,21 @@ You do not enter a Nextcloud URL. StartOS supplies the service-to-service connec
 
 ## Printer setup
 
-### Automatic UUID Discovery
+### Discover Printers
 
-Use this mode when you want Cloud Print Bridge to find the same printer even if its IP address changes.
+For first-time setup, open **Discover Printers** under Actions & Config.
+
+Enter one or more IPv4 networks that StartOS can route to. Cloud Print
+Bridge scans those networks for IPP printers and displays each discovered
+printer's name, persistent UUID, and IPP URI.
+
+Copy the UUID of the printer you want to use, then return to
+**Configure Cloud Print Bridge**.
+
+### Locate Printer by UUID
+
+Use this mode when you want Cloud Print Bridge to find the same printer
+even if its IP address changes.
 
 Configure:
 
@@ -179,7 +191,7 @@ If Cloud Print Bridge starts and finds files that were already in `Processing`, 
 
 - maximum source file size: 100 MiB
 - maximum PDF page count: 200
-- maximum UUID-discovery scan: 4096 unique IPv4 hosts
+- maximum printer-discovery scan: 4096 unique IPv4 hosts
 
 ## Troubleshooting
 
@@ -205,16 +217,25 @@ Read the nearby log entries. Common causes include invalid page selection, conve
 
 If the printer may have received part of the job, check the physical output before retrying.
 
-### Printer discovery fails
+### Discover Printers finds no printers
 
 Verify:
 
 - the printer is powered on
 - StartOS can route to the configured IPv4 network
 - TCP port 631/IPP is reachable
-- the configured UUID matches the printer
+- the discovery ranges are correct and do not exceed the host limit
+
+### Locate Printer by UUID fails
+
+Verify:
+
+- the configured UUID matches the desired printer
+- the printer is powered on
+- StartOS can route to the configured IPv4 network
+- TCP port 631/IPP is reachable
 - the discovery ranges are correct and do not exceed the host limit
 
 ### Manual printer URL fails
 
-Verify the printer address and IPP path. If its address changed, update the URL or switch to UUID discovery.
+Verify the printer address and IPP path. If its address changed, update the URL or switch to Locate Printer by UUID.

@@ -2,12 +2,8 @@
 
 ## Before public registry submission
 
-- Make the GitHub repository public when Cloud Print Bridge is ready for publication.
-- Review `THIRD_PARTY_NOTICES.md` against the exact packages in the final built image.
-- Configure and test GitHub Actions signing and registry/S3 variables before enabling release automation.
-- Run the final release regression matrix and StartOS package validation.
-- Test clean install, uninstall, reinstall, backup, and restore behavior on StartOS.
-- Decide the first public-release version and tag.
+- Make the GitHub repository public when Cloud Print Bridge is ready for submission.
+- Submit the public repository to the Start9 Community Registry and address any review feedback.
 
 ## Upstream/tooling follow-up
 

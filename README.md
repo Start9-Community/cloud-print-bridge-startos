@@ -166,7 +166,7 @@ Nextcloud is required and provides the WebDAV print queue. Cloud Print Bridge re
 
 ## Build
 
-Development follows the StartOS 0.4.0.x packaging toolchain.
+Development follows the current StartOS packaging toolchain.
 
 ```bash
 npm ci

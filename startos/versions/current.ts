@@ -1,18 +1,18 @@
 import { IMPOSSIBLE, VersionInfo } from '@start9labs/start-sdk'
 
 export const current = VersionInfo.of({
-  version: '0.6.0:2',
+  version: '0.6.0:3',
   releaseNotes: {
     en_US:
-      'Updates the Cloud Print Bridge service icon and user-facing package presentation.',
+      'Finalizes documentation and package metadata for public release preparation.',
     es_ES:
-      'Actualiza el icono del servicio Cloud Print Bridge y la presentación del paquete para el usuario.',
+      'Finaliza la documentación y los metadatos del paquete para preparar la publicación pública.',
     de_DE:
-      'Aktualisiert das Cloud-Print-Bridge-Dienstsymbol und die benutzerseitige Paketdarstellung.',
+      'Schließt Dokumentation und Paket-Metadaten zur Vorbereitung der öffentlichen Veröffentlichung ab.',
     pl_PL:
-      'Aktualizuje ikonę usługi Cloud Print Bridge oraz prezentację pakietu widoczną dla użytkownika.',
+      'Finalizuje dokumentację i metadane pakietu w ramach przygotowania do publicznego wydania.',
     fr_FR:
-      'Met à jour l’icône du service Cloud Print Bridge et la présentation du paquet destinée à l’utilisateur.',
+      'Finalise la documentation et les métadonnées du paquet en vue de la publication publique.',
   },
   migrations: {
     up: async ({ effects }) => {},

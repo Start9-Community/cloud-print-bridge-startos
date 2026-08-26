@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="icon.svg" alt="Cloud Print Bridge Logo" width="21%">
+  <img src="icon.webp" alt="Cloud Print Bridge Logo" width="21%">
 </p>
 
 # Cloud Print Bridge on StartOS

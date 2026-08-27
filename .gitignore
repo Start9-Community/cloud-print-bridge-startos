@@ -6,28 +6,5 @@ node_modules/
 docker-images
 javascript
 ncc-cache
-dev-backups/
-
-# Local AI/development instructions
-AGENTS.md
-CLAUDE.md
-
-# Python caches
 __pycache__/
 *.py[cod]
-.pytest_cache/
-
-# Local print/test artifacts
-*.pwg
-*.urf
-*.pre-*
-office-tests/
-text-test.txt
-pwg-test.pdf
-brother-raster.ppd
-
-# Local secrets
-.env
-.env.*
-*.pem
-*.key

@@ -1,16 +1,16 @@
-import concurrent.futures
-import ipaddress
-import socket
-import http.client
 #!/usr/bin/env python3
 
 import base64
+import concurrent.futures
+import http.client
 import io
+import ipaddress
 import json
 import os
 import re
-import subprocess
+import socket
 import struct
+import subprocess
 import tempfile
 import time
 import urllib.error
@@ -26,9 +26,66 @@ READY_FILE = "/tmp/cloud-print-bridge.ready"
 # Resource safety limits.
 MAX_SOURCE_BYTES = 100 * 1024 * 1024
 MAX_PDF_PAGES = 200
+# One 600-dpi sRGB Letter page is ~100 MB before PWG's line encoding, so an
+# unbounded raster fills the disk long before the page limit bites.
+MAX_PWG_BYTES = 2 * 1024 * 1024 * 1024
 DOWNLOAD_CHUNK_BYTES = 1024 * 1024
 
 DAV_NS = "{DAV:}"
+
+QUEUE_ROOT = "Cloud Print"
+INBOX_FOLDER = "Inbox"
+PROCESSING_FOLDER = "Processing"
+PRINTED_FOLDER = "Printed"
+FAILED_FOLDER = "Failed"
+QUEUE_FOLDERS = (
+    INBOX_FOLDER,
+    PROCESSING_FOLDER,
+    PRINTED_FOLDER,
+    FAILED_FOLDER,
+)
+
+IMAGE_EXTENSIONS = (
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".bmp",
+    ".tif",
+    ".tiff",
+    ".webp",
+)
+
+OFFICE_EXTENSIONS = (
+    ".doc",
+    ".docx",
+    ".odt",
+    ".rtf",
+    ".xls",
+    ".xlsx",
+    ".ods",
+    ".ppt",
+    ".pptx",
+    ".odp",
+)
+
+SUPPORTED_EXTENSIONS = (
+    (".pdf", ".txt")
+    + IMAGE_EXTENSIONS
+    + OFFICE_EXTENSIONS
+)
+
+DEFAULT_MEDIA = "na_letter_8.5x11in"
+
+# PDF points per configurable paper size.
+MEDIA_SPECS = {
+    "na_letter_8.5x11in": (612, 792),
+    "iso_a4_210x297mm": (595.276, 841.890),
+    "na_legal_8.5x14in": (612, 1008),
+    "na_executive_7.25x10.5in": (522, 756),
+    "iso_a5_148x210mm": (419.528, 595.276),
+    "iso_a6_105x148mm": (297.638, 419.528),
+    "iso_b5_176x250mm": (498.898, 708.661),
+}
 
 
 class PermanentJobError(Exception):
@@ -63,6 +120,12 @@ def human_size(byte_count):
         size /= 1024
 
     return f"{byte_count} B"
+
+
+def configured_media(config):
+    media = config.get("media", DEFAULT_MEDIA)
+
+    return media if media in MEDIA_SPECS else DEFAULT_MEDIA
 
 
 def print_settings_summary(config):
@@ -127,13 +190,24 @@ def print_settings_summary(config):
 
 
 
+_last_config_error = None
+
+
 def load_config():
+    global _last_config_error
+
     try:
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+            config = json.load(f)
     except (OSError, json.JSONDecodeError) as exc:
-        log(f"Configuration unavailable: {exc}")
+        # The poll loop calls this every few seconds; log each fault once.
+        if str(exc) != _last_config_error:
+            _last_config_error = str(exc)
+            log(f"Configuration unavailable: {exc}")
         return {}
+
+    _last_config_error = None
+    return config
 
 
 def configured(config):
@@ -244,14 +318,47 @@ def dav_root(config):
     return f"{base}/remote.php/dav/files/{user}"
 
 
+def queue_url(config, folder):
+    root = urllib.parse.quote(QUEUE_ROOT, safe="")
+    name = urllib.parse.quote(folder, safe="")
+
+    return f"{dav_root(config)}/{root}/{name}/"
+
+
 def inbox_url(config):
-    return dav_root(config) + "/Cloud%20Print/Inbox/"
+    return queue_url(config, INBOX_FOLDER)
+
 
 def processing_url(config):
-    return (
-        dav_root(config)
-        + "/Cloud%20Print/Processing/"
-    )
+    return queue_url(config, PROCESSING_FOLDER)
+
+
+def ensure_queue_folders(config):
+    """Create the Cloud Print queue tree, which the bridge owns."""
+    root = urllib.parse.quote(QUEUE_ROOT, safe="")
+
+    targets = [(QUEUE_ROOT, f"{dav_root(config)}/{root}/")]
+    targets += [
+        (f"{QUEUE_ROOT}/{name}", queue_url(config, name))
+        for name in QUEUE_FOLDERS
+    ]
+
+    for label, url in targets:
+        try:
+            with dav_request(config, "MKCOL", url):
+                pass
+        except urllib.error.HTTPError as exc:
+            # 405 is "already a collection", the steady state after first run.
+            if exc.code != 405:
+                log(
+                    f"Unable to create {label}: HTTP {exc.code}"
+                )
+                return False
+        except Exception as exc:
+            log(f"Unable to create {label}: {exc}")
+            return False
+
+    return True
 
 
 
@@ -306,7 +413,11 @@ def find_supported_job(config):
 
         href = href_node.text
 
-        if href.lower().endswith((".jpg", ".jpeg", ".pdf", ".png", ".bmp", ".tif", ".tiff", ".webp", ".txt", ".doc", ".docx", ".odt", ".rtf", ".xls", ".xlsx", ".ods", ".ppt", ".pptx", ".odp")):
+        # A WebDAV collection's href always ends in a slash; only files print.
+        if href.endswith("/"):
+            continue
+
+        if href.lower().endswith(SUPPORTED_EXTENSIONS):
             return href
 
     return None
@@ -353,12 +464,18 @@ def find_processing_jobs(config):
 
         href = href_node.text
 
-        if href.rstrip("/").endswith(
-            "/Processing"
-        ):
+        if href.endswith("/"):
             continue
 
-        if "/Processing/" not in href:
+        try:
+            _, folder, _ = split_queue_href(href)
+        except ValueError:
+            continue
+
+        if (
+            urllib.parse.unquote(folder)
+            != PROCESSING_FOLDER
+        ):
             continue
 
         jobs.append(href)
@@ -367,19 +484,59 @@ def find_processing_jobs(config):
 
 
 
-def replace_queue_folder(href, old_folder, new_folder):
-    old = f"/{old_folder}/"
-    new = f"/{new_folder}/"
+def split_queue_href(href):
+    """Split a queue file href into (leading path parts, folder, filename)."""
+    parts = urllib.parse.urlsplit(href).path.split("/")
 
-    if old not in href:
+    if len(parts) < 3 or not parts[-1]:
+        raise ValueError(f"Not a queue file path: {href}")
+
+    return parts[:-2], parts[-2], parts[-1]
+
+
+def replace_queue_folder(href, old_folder, new_folder):
+    prefix, folder, filename = split_queue_href(href)
+
+    if urllib.parse.unquote(folder) != old_folder:
         raise ValueError(
             f"Expected {old_folder} folder in WebDAV path: {href}"
         )
 
-    return href.replace(old, new, 1)
+    return "/".join(
+        prefix
+        + [
+            urllib.parse.quote(new_folder, safe=""),
+            filename,
+        ]
+    )
+
+
+def suffix_queue_href(href, attempt):
+    """Return the href with a numeric suffix on its filename."""
+    prefix, folder, filename = split_queue_href(href)
+
+    stem, extension = os.path.splitext(
+        urllib.parse.unquote(filename)
+    )
+
+    return "/".join(
+        prefix
+        + [
+            folder,
+            urllib.parse.quote(
+                f"{stem} ({attempt}){extension}",
+                safe="",
+            ),
+        ]
+    )
+
+
+def move_succeeded(status):
+    return status in (201, 204)
 
 
 def move_dav_file(config, source_href, destination_href):
+    """Return the MOVE's HTTP status, or None if the request could not be sent."""
     source_url = absolute_dav_url(config, source_href)
     destination_url = absolute_dav_url(config, destination_href)
 
@@ -393,27 +550,33 @@ def move_dav_file(config, source_href, destination_href):
                 "Overwrite": "F",
             },
         ) as response:
-            return response.status in (201, 204)
+            return response.status
 
     except urllib.error.HTTPError as exc:
         log(f"MOVE failed with HTTP {exc.code}")
-        return False
+        return exc.code
 
     except Exception as exc:
         log(f"MOVE failed: {exc}")
-        return False
+        return None
 
 
 def claim_job(config, inbox_href):
     processing_href = replace_queue_folder(
         inbox_href,
-        "Inbox",
-        "Processing",
+        INBOX_FOLDER,
+        PROCESSING_FOLDER,
     )
 
     log(f"Claiming: {job_display_name(inbox_href)}")
 
-    if not move_dav_file(config, inbox_href, processing_href):
+    if not move_succeeded(
+        move_dav_file(
+            config,
+            inbox_href,
+            processing_href,
+        )
+    ):
         return None
 
     log(
@@ -438,63 +601,6 @@ def ipp_attribute(tag, name, value):
         + struct.pack("!H", len(value_bytes))
         + value_bytes
     )
-
-
-def build_ipp_print_job(printer_uri, jpeg_data):
-    request_id = int(time.time()) & 0x7FFFFFFF
-
-    ipp = bytearray()
-
-    # IPP/1.1, Print-Job operation (0x0002), request ID
-    ipp += b"\x01\x01"
-    ipp += b"\x00\x02"
-    ipp += struct.pack("!I", request_id)
-
-    # operation-attributes-tag
-    ipp += b"\x01"
-
-    ipp += ipp_attribute(
-        0x47,
-        "attributes-charset",
-        "utf-8",
-    )
-
-    ipp += ipp_attribute(
-        0x48,
-        "attributes-natural-language",
-        "en",
-    )
-
-    ipp += ipp_attribute(
-        0x45,
-        "printer-uri",
-        printer_uri,
-    )
-
-    ipp += ipp_attribute(
-        0x42,
-        "requesting-user-name",
-        "cloud-print-bridge",
-    )
-
-    ipp += ipp_attribute(
-        0x42,
-        "job-name",
-        "Nextcloud Cloud Print",
-    )
-
-    ipp += ipp_attribute(
-        0x49,
-        "document-format",
-        "image/jpeg",
-    )
-
-    # end-of-attributes-tag
-    ipp += b"\x03"
-
-    ipp += jpeg_data
-
-    return bytes(ipp)
 
 
 def printer_http_url(printer_uri):
@@ -791,15 +897,15 @@ def scan_ipp_hosts(discovery_networks):
             if host in seen_hosts:
                 continue
 
-            seen_hosts.add(host)
-            hosts.append(host)
-
-            if len(hosts) > MAX_DISCOVERY_HOSTS:
+            if len(hosts) >= MAX_DISCOVERY_HOSTS:
                 raise ValueError(
                     "Printer discovery networks contain more than "
                     f"{MAX_DISCOVERY_HOSTS} unique hosts. "
                     "Use smaller CIDR ranges."
                 )
+
+            seen_hosts.add(host)
+            hosts.append(host)
 
     if not hosts:
         raise ValueError(
@@ -1052,79 +1158,40 @@ def resolve_printer_uri(config):
 
 
 
-def submit_print_job(config, jpeg_data):
-    try:
-        printer_uri = resolve_printer_uri(
-            config
-        )
-        target_url = printer_http_url(
-            printer_uri
-        )
-        body = build_ipp_print_job(
-            printer_uri,
-            jpeg_data,
-        )
-    except Exception as exc:
-        log(f"Invalid printer configuration: {exc}")
-        return "failure"
-
-    request = urllib.request.Request(
-        target_url,
-        data=body,
-        headers={
-            "Content-Type": "application/ipp",
-            "Accept": "application/ipp",
-        },
-        method="POST",
-    )
-
-    try:
-        with urllib.request.urlopen(
-            request,
-            timeout=60,
-        ) as response:
-            response_data = response.read()
-
-    except urllib.error.HTTPError as exc:
-        log(f"Printer returned HTTP {exc.code}.")
-        return "failure"
-
-    except Exception as exc:
-        # We cannot know whether the printer accepted the document before
-        # the connection failed. Report an ambiguous result so the caller
-        # can quarantine the source without automatically reprinting it.
-        log(f"Printer connection became ambiguous: {exc}")
-        return "ambiguous"
-
-    if len(response_data) < 8:
-        log("Printer returned an invalid IPP response.")
-        return "ambiguous"
-
-    status = struct.unpack("!H", response_data[2:4])[0]
-
-    # IPP success status codes occupy 0x0000-0x00FF.
-    if status < 0x0100:
-        log(f"Printer accepted job. IPP status 0x{status:04x}.")
-        return "success"
-
-    log(f"Printer rejected job. IPP status 0x{status:04x}.")
-    return "failure"
-
-
 def finalize_job(config, processing_href, folder):
     destination_href = replace_queue_folder(
         processing_href,
-        "Processing",
+        PROCESSING_FOLDER,
         folder,
     )
 
-    if move_dav_file(config, processing_href, destination_href):
-        log(
-            f"Completed: "
-            f"{job_display_name(processing_href)} "
-            f"-> {folder}"
+    candidate = destination_href
+
+    # Overwrite: F is what makes the Inbox claim atomic, so a name already
+    # present in the destination fails the move (412). Reprinting the same
+    # filename is ordinary, so land it beside the earlier copy.
+    for attempt in range(2, 12):
+        status = move_dav_file(
+            config,
+            processing_href,
+            candidate,
         )
-        return True
+
+        if move_succeeded(status):
+            log(
+                f"Completed: "
+                f"{job_display_name(candidate)} "
+                f"-> {folder}"
+            )
+            return True
+
+        if status != 412:
+            break
+
+        candidate = suffix_queue_href(
+            destination_href,
+            attempt,
+        )
 
     log(
         f"WARNING: Could not move job to {folder}; "
@@ -1160,7 +1227,7 @@ def cleanup_orphaned_processing_jobs(config):
         if not finalize_job(
             config,
             processing_href,
-            "Failed",
+            FAILED_FOLDER,
         ):
             all_moved = False
 
@@ -1183,7 +1250,7 @@ def fail_unconfirmed_print_job(
     finalize_job(
         config,
         processing_href,
-        "Failed",
+        FAILED_FOLDER,
     )
 
 
@@ -1277,8 +1344,20 @@ def source_extension(href):
     return os.path.splitext(path)[1].lower()
 
 
-def image_to_jpeg_pages(source_data, extension):
+def image_to_pdf(source_data, extension, config):
+    """Lay an image (every frame of a multi-page TIFF) onto PDF pages."""
     try:
+        from reportlab.lib.utils import ImageReader
+        from reportlab.pdfgen import canvas
+
+        page_width, page_height = MEDIA_SPECS[
+            configured_media(config)
+        ]
+
+        margin = 18.0
+        max_width = page_width - 2 * margin
+        max_height = page_height - 2 * margin
+
         image = Image.open(io.BytesIO(source_data))
 
         if extension in (".tif", ".tiff"):
@@ -1286,120 +1365,70 @@ def image_to_jpeg_pages(source_data, extension):
         else:
             frames = [image]
 
-        pages = []
+        output = io.BytesIO()
+
+        pdf = canvas.Canvas(
+            output,
+            pagesize=(page_width, page_height),
+            pageCompression=1,
+        )
+
+        page_count = 0
 
         for frame in frames:
+            if page_count >= MAX_PDF_PAGES:
+                log(
+                    f"Image contains more than {MAX_PDF_PAGES} "
+                    "printable pages."
+                )
+                return None
+
             frame.load()
             rgb = frame.convert("RGB")
 
-            output = io.BytesIO()
-            rgb.save(
-                output,
-                format="JPEG",
-                quality=92,
-                optimize=True,
+            scale = min(
+                max_width / rgb.width,
+                max_height / rgb.height,
             )
 
-            pages.append(output.getvalue())
+            width = rgb.width * scale
+            height = rgb.height * scale
+
+            pdf.drawImage(
+                ImageReader(rgb),
+                (page_width - width) / 2,
+                (page_height - height) / 2,
+                width=width,
+                height=height,
+            )
+
+            pdf.showPage()
+            page_count += 1
 
         image.close()
 
-        if not pages:
-            raise ValueError("Image contains no printable pages")
+        if not page_count:
+            log("Image contains no printable pages.")
+            return None
 
-        return pages
+        pdf.save()
+
+        pdf_data = output.getvalue()
+
+        if len(pdf_data) < 100 or not pdf_data.startswith(b"%PDF-"):
+            log("Image renderer produced an invalid PDF.")
+            return None
+
+        log(
+            f"Rendered {extension.lstrip('.').upper()} to "
+            f"{page_count} PDF page(s)."
+        )
+
+        return pdf_data
 
     except Exception as exc:
         log(f"Image conversion failed: {exc}")
         return None
-
-
-def pdf_to_jpeg_pages(source_data):
-    try:
-        with tempfile.TemporaryDirectory(
-            prefix="cloud-print-pdf-"
-        ) as workdir:
-
-            source_path = os.path.join(workdir, "document.pdf")
-            output_pattern = os.path.join(
-                workdir,
-                "page-%04d.jpg",
-            )
-
-            with open(source_path, "wb") as f:
-                f.write(source_data)
-
-            command = [
-                "gs",
-                "-q",
-                "-dSAFER",
-                "-dBATCH",
-                "-dNOPAUSE",
-                "-sDEVICE=jpeg",
-                "-r150",
-                "-dJPEGQ=92",
-                f"-sOutputFile={output_pattern}",
-                source_path,
-            ]
-
-            result = subprocess.run(
-                command,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                timeout=180,
-                check=False,
-            )
-
-            if result.returncode != 0:
-                message = result.stderr.decode(
-                    "utf-8",
-                    errors="replace",
-                ).strip()
-
-                log(
-                    "PDF conversion failed"
-                    + (f": {message}" if message else "")
-                )
-                return None
-
-            filenames = sorted(
-                name
-                for name in os.listdir(workdir)
-                if name.startswith("page-")
-                and name.endswith(".jpg")
-            )
-
-            if not filenames:
-                log("PDF conversion produced no pages.")
-                return None
-
-            pages = []
-
-            for filename in filenames:
-                page_path = os.path.join(workdir, filename)
-
-                with open(page_path, "rb") as f:
-                    page = f.read()
-
-                if not page.startswith(b"\xff\xd8\xff"):
-                    log(
-                        f"Ghostscript produced an invalid JPEG: "
-                        f"{filename}"
-                    )
-                    return None
-
-                pages.append(page)
-
-            return pages
-
-    except subprocess.TimeoutExpired:
-        log("PDF conversion timed out.")
-        return None
-
-    except Exception as exc:
-        log(f"PDF conversion failed: {exc}")
-        return None
-
 
 
 def text_to_pdf(source_data, config):
@@ -1422,48 +1451,9 @@ def text_to_pdf(source_data, config):
         from reportlab.pdfbase import pdfmetrics
         from reportlab.pdfbase.ttfonts import TTFont
 
-        media_specs = {
-            "na_letter_8.5x11in": (
-                612,
-                792,
-            ),
-            "iso_a4_210x297mm": (
-                595.276,
-                841.890,
-            ),
-            "na_legal_8.5x14in": (
-                612,
-                1008,
-            ),
-            "na_executive_7.25x10.5in": (
-                522,
-                756,
-            ),
-            "iso_a5_148x210mm": (
-                419.528,
-                595.276,
-            ),
-            "iso_a6_105x148mm": (
-                297.638,
-                419.528,
-            ),
-            "iso_b5_176x250mm": (
-                498.898,
-                708.661,
-            ),
-        }
-
-        media = config.get(
-            "media",
-            "na_letter_8.5x11in",
-        )
-
-        if media not in media_specs:
-            media = "na_letter_8.5x11in"
-
-        page_width, page_height = (
-            media_specs[media]
-        )
+        page_width, page_height = MEDIA_SPECS[
+            configured_media(config)
+        ]
 
         font_path = (
             "/usr/share/fonts/truetype/"
@@ -2222,30 +2212,10 @@ def pdf_extract_selected_pages(
         return None
 
 
-def pdf_to_pwg_raster(source_data, config):
-    media_specs = {
-        "na_letter_8.5x11in": (612, 792),
-        "iso_a4_210x297mm": (595.276, 841.890),
-        "na_legal_8.5x14in": (612, 1008),
-        "na_executive_7.25x10.5in": (522, 756),
-        "iso_a5_148x210mm": (419.528, 595.276),
-        "iso_a6_105x148mm": (297.638, 419.528),
-        "iso_b5_176x250mm": (498.898, 708.661),
-    }
-
-    media = config.get(
-        "media",
-        "na_letter_8.5x11in",
-    )
-
-    if media not in media_specs:
-        log(
-            f"Unsupported configured media {media}; "
-            "falling back to Letter."
-        )
-        media = "na_letter_8.5x11in"
-
-    width_points, height_points = media_specs[media]
+def pdf_to_pwg_raster(source_data, config, output_path):
+    """Rasterize to output_path; return its byte count, or None on failure."""
+    media = configured_media(config)
+    width_points, height_points = MEDIA_SPECS[media]
 
     color_mode = config.get(
         "colorMode",
@@ -2286,11 +2256,6 @@ def pdf_to_pwg_raster(source_data, config):
             source_path = os.path.join(
                 workdir,
                 "document.pdf",
-            )
-
-            output_path = os.path.join(
-                workdir,
-                "document.pwg",
             )
 
             ppd_path = os.path.join(
@@ -2421,23 +2386,31 @@ def pdf_to_pwg_raster(source_data, config):
                 )
                 return None
 
-            with open(output_path, "rb") as f:
-                pwg_data = f.read()
+            pwg_size = os.path.getsize(output_path)
 
-            if len(pwg_data) < 100:
+            if pwg_size < 100:
                 log(
                     "PWG Raster output is "
                     "unexpectedly small."
                 )
                 return None
 
+            if pwg_size > MAX_PWG_BYTES:
+                log(
+                    "PWG Raster output is "
+                    f"{human_size(pwg_size)}, over the "
+                    f"{human_size(MAX_PWG_BYTES)} print-job limit. "
+                    "Reduce the page count, or print in monochrome."
+                )
+                return None
+
             log(
-                f"Converted PDF to "
-                f"{len(pwg_data)} bytes "
-                f"of PWG Raster."
+                "Converted PDF to "
+                f"{human_size(pwg_size)} "
+                "of PWG Raster."
             )
 
-            return pwg_data
+            return pwg_size
 
     except subprocess.TimeoutExpired:
         log("PWG Raster conversion timed out.")
@@ -2448,37 +2421,6 @@ def pdf_to_pwg_raster(source_data, config):
             f"PWG Raster conversion failed: {exc}"
         )
         return None
-
-
-
-def convert_to_jpeg_pages(href, source_data):
-    extension = source_extension(href)
-
-    if extension in (".jpg", ".jpeg"):
-        if not source_data.startswith(b"\xff\xd8\xff"):
-            log("JPEG signature is invalid.")
-            return None
-
-        return [source_data]
-
-    if extension == ".pdf":
-        return pdf_to_jpeg_pages(source_data)
-
-    if extension in (
-        ".png",
-        ".bmp",
-        ".tif",
-        ".tiff",
-        ".webp",
-    ):
-        return image_to_jpeg_pages(
-            source_data,
-            extension,
-        )
-
-    log(f"Unsupported file type: {extension}")
-    return None
-
 
 
 
@@ -2743,11 +2685,11 @@ def build_create_job_request(
     return bytes(body)
 
 
-def build_send_document_request(
+def build_send_document_prefix(
     printer_uri,
     job_id,
-    pwg_data,
 ):
+    """The Send-Document IPP header the raster stream is appended to."""
     request_id = (
         int(time.time() * 1000)
         & 0x7FFFFFFF
@@ -2803,7 +2745,6 @@ def build_send_document_request(
     )
 
     body += b"\x03"
-    body += pwg_data
 
     return bytes(body)
 
@@ -2891,6 +2832,7 @@ def create_ipp_job(
             body,
             30,
         )
+    # Create-Job carries no document, so however it fails, nothing printed.
     except urllib.error.HTTPError as exc:
         log(
             f"Create-Job returned HTTP {exc.code}."
@@ -2898,9 +2840,9 @@ def create_ipp_job(
         return "failure", None
     except Exception as exc:
         log(
-            f"Create-Job result is ambiguous: {exc}"
+            f"Could not reach the printer: {exc}"
         )
-        return "ambiguous", None
+        return "failure", None
 
     status, attributes = parse_ipp_typed_attributes(
         response_data
@@ -2910,7 +2852,7 @@ def create_ipp_job(
         log(
             "Create-Job returned an invalid IPP response."
         )
-        return "ambiguous", None
+        return "failure", None
 
     if status >= 0x0100:
         log(
@@ -2928,7 +2870,7 @@ def create_ipp_job(
         log(
             "Create-Job succeeded but returned no valid job-id."
         )
-        return "ambiguous", None
+        return "failure", None
 
     log(
         f"Printer created IPP job {job_id}."
@@ -3072,7 +3014,8 @@ PRINTER_SEND_RESPONSE_TIMEOUT = 300
 def stream_ipp_send_document(
     printer_uri,
     prefix,
-    pwg_data,
+    pwg_path,
+    pwg_size,
 ):
     target_url = printer_http_url(printer_uri)
     parsed = urllib.parse.urlsplit(target_url)
@@ -3094,7 +3037,7 @@ def stream_ipp_send_document(
     if parsed.query:
         path += "?" + parsed.query
 
-    total_length = len(prefix) + len(pwg_data)
+    total_length = len(prefix) + pwg_size
 
     connection = connection_class(
         host,
@@ -3120,54 +3063,54 @@ def stream_ipp_send_document(
 
         connection.send(prefix)
 
-        view = memoryview(pwg_data)
-        total_pwg_bytes = len(view)
-
         progress_step = 25 * 1024 * 1024
         next_progress = progress_step
+        sent = 0
 
-        for offset in range(
-            0,
-            total_pwg_bytes,
-            PRINTER_SEND_CHUNK_BYTES,
-        ):
-            if connection.sock is not None:
-                connection.sock.settimeout(
-                    PRINTER_SEND_STALL_TIMEOUT
+        # Streamed from disk: a 600-dpi raster is far too large to hold in
+        # memory alongside the printer's copy of it.
+        with open(pwg_path, "rb") as raster:
+            while True:
+                chunk = raster.read(
+                    PRINTER_SEND_CHUNK_BYTES
                 )
 
-            end = min(
-                offset + PRINTER_SEND_CHUNK_BYTES,
-                total_pwg_bytes,
+                if not chunk:
+                    break
+
+                if connection.sock is not None:
+                    connection.sock.settimeout(
+                        PRINTER_SEND_STALL_TIMEOUT
+                    )
+
+                connection.send(chunk)
+                sent += len(chunk)
+
+                if (
+                    sent >= next_progress
+                    and sent < pwg_size
+                ):
+                    percent = round(
+                        (sent * 100) / pwg_size
+                    )
+
+                    log(
+                        f"Sent {human_size(sent)} of "
+                        f"{human_size(pwg_size)} "
+                        f"({percent}%)."
+                    )
+
+                    while next_progress <= sent:
+                        next_progress += progress_step
+
+        if sent != pwg_size:
+            raise RuntimeError(
+                "PWG Raster shrank while it was being sent."
             )
-
-            connection.send(
-                view[offset:end]
-            )
-
-            sent = end
-
-            if (
-                sent >= next_progress
-                and sent < total_pwg_bytes
-            ):
-                percent = round(
-                    (sent * 100)
-                    / total_pwg_bytes
-                )
-
-                log(
-                    f"Sent {human_size(sent)} of "
-                    f"{human_size(total_pwg_bytes)} "
-                    f"({percent}%)."
-                )
-
-                while next_progress <= sent:
-                    next_progress += progress_step
 
         log(
-            f"PWG upload complete: "
-            f"{human_size(total_pwg_bytes)}."
+            "PWG upload complete: "
+            f"{human_size(pwg_size)}."
         )
 
         if connection.sock is not None:
@@ -3193,26 +3136,25 @@ def stream_ipp_send_document(
 def send_pwg_document(
     printer_uri,
     job_id,
-    pwg_data,
+    pwg_path,
+    pwg_size,
 ):
-    # Reuse the existing IPP builder with an empty document
-    # to produce only the Send-Document IPP prefix.
-    prefix = build_send_document_request(
+    prefix = build_send_document_prefix(
         printer_uri,
         job_id,
-        b"",
     )
 
     log(
         "Streaming PWG Raster to IPP job "
-        f"{job_id}: {human_size(len(pwg_data))}."
+        f"{job_id}: {human_size(pwg_size)}."
     )
 
     try:
         response_data = stream_ipp_send_document(
             printer_uri,
             prefix,
-            pwg_data,
+            pwg_path,
+            pwg_size,
         )
     except Exception as exc:
         log(
@@ -3269,7 +3211,7 @@ def send_pwg_document(
 
 
 
-def submit_pwg_job(config, pwg_data):
+def submit_pwg_job(config, pwg_path, pwg_size):
     try:
         printer_uri = resolve_printer_uri(
             config
@@ -3280,10 +3222,7 @@ def submit_pwg_job(config, pwg_data):
         )
         return "failure"
 
-    media = config.get(
-        "media",
-        "na_letter_8.5x11in",
-    )
+    media = configured_media(config)
 
     color_mode = config.get(
         "colorMode",
@@ -3321,7 +3260,8 @@ def submit_pwg_job(config, pwg_data):
     return send_pwg_document(
         printer_uri,
         job_id,
-        pwg_data,
+        pwg_path,
+        pwg_size,
     )
 
 
@@ -3335,6 +3275,13 @@ def process_job(config, inbox_href):
     if processing_href is None:
         return
 
+    def fail():
+        finalize_job(
+            config,
+            processing_href,
+            FAILED_FOLDER,
+        )
+
     try:
         source_data = download_source(
             config,
@@ -3342,54 +3289,25 @@ def process_job(config, inbox_href):
         )
 
     except PermanentJobError as exc:
-        log(
-            f"Rejecting print job: {exc}"
-        )
-
-        finalize_job(
-            config,
-            processing_href,
-            "Failed",
-        )
-        return
+        log(f"Rejecting print job: {exc}")
+        return fail()
 
     if source_data is None:
         log(
             "Download result was uncertain. "
             "Moving job to Failed without automatic retry."
         )
+        return fail()
 
-        finalize_job(
-            config,
-            processing_href,
-            "Failed",
-        )
-        return
-
-    extension = source_extension(
-        processing_href
-    )
+    extension = source_extension(processing_href)
 
     log(
-        f"Document type: "
+        "Document type: "
         f"{extension.lstrip('.').upper() or 'UNKNOWN'}"
     )
 
-    office_extensions = (
-        ".doc",
-        ".docx",
-        ".odt",
-        ".rtf",
-        ".xls",
-        ".xlsx",
-        ".ods",
-        ".ppt",
-        ".pptx",
-        ".odp",
-    )
-
-    # PDF and Office documents converge on the
-    # same proven PDF -> PWG Raster print path.
+    # Every format converges on the same PDF -> PWG Raster print path, so the
+    # configured media, colour, duplex and copies apply to all of them.
     page_selection = None
 
     if extension == ".pdf":
@@ -3398,31 +3316,16 @@ def process_job(config, inbox_href):
                 processing_href
             )
         except PermanentJobError as exc:
-            log(
-                f"Rejecting print job: {exc}"
-            )
-            finalize_job(
-                config,
-                processing_href,
-                "Failed",
-            )
-            return
+            log(f"Rejecting print job: {exc}")
+            return fail()
 
         pdf_data = source_data
 
-    elif extension in office_extensions:
+    elif extension in OFFICE_EXTENSIONS:
         pdf_data = office_to_pdf(
             processing_href,
             source_data,
         )
-
-        if pdf_data is None:
-            finalize_job(
-                config,
-                processing_href,
-                "Failed",
-            )
-            return
 
     elif extension == ".txt":
         pdf_data = text_to_pdf(
@@ -3430,81 +3333,69 @@ def process_job(config, inbox_href):
             config,
         )
 
-        if pdf_data is None:
-            finalize_job(
-                config,
-                processing_href,
-                "Failed",
-            )
-            return
-
-    else:
-        pdf_data = None
-
-    if pdf_data is not None:
-        if page_selection is not None:
-            pdf_data = pdf_extract_selected_pages(
-                pdf_data,
-                page_selection,
-            )
-
-            if pdf_data is None:
-                finalize_job(
-                    config,
-                    processing_href,
-                    "Failed",
-                )
-                return
-
-        pwg_data = pdf_to_pwg_raster(
-            pdf_data,
+    elif extension in IMAGE_EXTENSIONS:
+        pdf_data = image_to_pdf(
+            source_data,
+            extension,
             config,
         )
 
-        if pwg_data is None:
-            finalize_job(
-                config,
-                processing_href,
-                "Failed",
-            )
-            return
+    else:
+        log(f"Unsupported file type: {extension}")
+        return fail()
 
-        try:
-            copies = int(
-                config.get(
-                    "copies",
-                    1,
-                )
-            )
-        except Exception:
-            copies = 1
+    if pdf_data is None:
+        return fail()
 
-        copies = max(
-            1,
-            min(
-                copies,
-                99,
-            ),
+    if page_selection is not None:
+        pdf_data = pdf_extract_selected_pages(
+            pdf_data,
+            page_selection,
         )
+
+        if pdf_data is None:
+            return fail()
+
+    try:
+        copies = int(config.get("copies", 1))
+    except (TypeError, ValueError):
+        copies = 1
+
+    copies = max(1, min(copies, 99))
+
+    with tempfile.TemporaryDirectory(
+        prefix="cloud-print-job-"
+    ) as workdir:
+
+        pwg_path = os.path.join(workdir, "document.pwg")
+
+        pwg_size = pdf_to_pwg_raster(
+            pdf_data,
+            config,
+            pwg_path,
+        )
+
+        if pwg_size is None:
+            return fail()
+
+        # The raster is on disk from here on; the upload can run for minutes.
+        pdf_data = None
+        source_data = None
 
         log(
             f"Printing {copies} "
-            f"cop"
-            f"{'y' if copies == 1 else 'ies'}."
+            f"cop{'y' if copies == 1 else 'ies'}."
         )
 
-        for copy_number in range(
-            1,
-            copies + 1,
-        ):
+        for copy_number in range(1, copies + 1):
             log(
-                f"Submitting copy "
-                f"{copy_number} of {copies}."
+                f"Submitting copy {copy_number} of {copies}."
             )
 
             print_status = submit_pwg_job(
                 config,
-                pwg_data,
+                pwg_path,
+                pwg_size,
             )
 
             if print_status == "success":
@@ -3514,89 +3405,20 @@ def process_job(config, inbox_href):
                 print_status == "failure"
                 and copy_number == 1
             ):
-                finalize_job(
-                    config,
-                    processing_href,
-                    "Failed",
-                )
-                return
+                return fail()
 
-            fail_unconfirmed_print_job(
+            return fail_unconfirmed_print_job(
                 config,
                 processing_href,
                 "printing stopped before all requested copies "
                 "were safely confirmed complete.",
             )
-            return
-
-        finalize_job(
-            config,
-            processing_href,
-            "Printed",
-        )
-        return
-
-    # Existing image path remains unchanged.
-    pages = convert_to_jpeg_pages(
-        processing_href,
-        source_data,
-    )
-
-    if not pages:
-        finalize_job(
-            config,
-            processing_href,
-            "Failed",
-        )
-        return
-
-    log(
-        f"Document contains "
-        f"{len(pages)} printable page(s)."
-    )
-
-    for page_number, jpeg_data in enumerate(
-        pages,
-        start=1,
-    ):
-        log(
-            f"Printing page {page_number} "
-            f"of {len(pages)}..."
-        )
-
-        print_status = submit_print_job(
-            config,
-            jpeg_data,
-        )
-
-        if print_status == "success":
-            continue
-
-        if (
-            print_status == "failure"
-            and page_number == 1
-        ):
-            finalize_job(
-                config,
-                processing_href,
-                "Failed",
-            )
-            return
-
-        fail_unconfirmed_print_job(
-            config,
-            processing_href,
-            "printing stopped before all image pages "
-            "were safely confirmed complete.",
-        )
-        return
 
     finalize_job(
         config,
         processing_href,
-        "Printed",
+        PRINTED_FOLDER,
     )
-
 
 
 def poll_seconds(config):
@@ -3624,12 +3446,23 @@ def set_ready(is_ready):
             pass
 
 
+def queue_identity(config):
+    """What a prepared queue depends on; a change re-runs preparation."""
+    return (
+        str(config.get("nextcloudUsername", "")),
+        str(config.get("nextcloudAppPassword", "")),
+        os.environ.get("NEXTCLOUD_BRIDGE_ADDRESS", ""),
+        os.environ.get("NEXTCLOUD_HOST_HEADER", ""),
+    )
+
+
 def run():
     log("Cloud Print Bridge starting.")
 
     was_configured = None
     was_bridge_available = None
     was_ready = None
+    prepared_identity = None
     processing_cleanup_done = False
 
     while True:
@@ -3650,7 +3483,7 @@ def run():
             ).strip()
         )
 
-        is_ready = (
+        connected = (
             is_configured
             and bridge_available
             and host_identity_available
@@ -3682,6 +3515,23 @@ def run():
                 )
 
             was_bridge_available = bridge_available
+
+        identity = queue_identity(config)
+
+        # Creating the queue tree is also the credential check: it is the
+        # first authenticated write, so readiness means Nextcloud answered.
+        if connected and prepared_identity != identity:
+            processing_cleanup_done = False
+
+            if ensure_queue_folders(config):
+                prepared_identity = identity
+            else:
+                prepared_identity = None
+
+        is_ready = (
+            connected
+            and prepared_identity == identity
+        )
 
         if is_ready != was_ready:
             if is_ready:
@@ -3728,7 +3578,8 @@ def run():
 
             if job_href:
                 log(
-                    f"Found print job: {job_href}"
+                    "Found print job: "
+                    f"{job_display_name(job_href)}"
                 )
                 process_job(
                     config,

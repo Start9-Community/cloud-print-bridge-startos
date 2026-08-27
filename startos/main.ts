@@ -1,6 +1,7 @@
 import { uiPort as nextcloudInternalPort } from 'nextcloud-startos/startos/utils'
 import { i18n } from './i18n'
 import { sdk } from './sdk'
+import { WORKER_USER } from './utils'
 
 const nextcloudPackageId = 'nextcloud' as const
 const nextcloudHostId = 'main' as const
@@ -16,6 +17,9 @@ export const main = sdk.setupMain(async ({ effects }) => {
     })
     .const()
 
+  // Nextcloud rejects a request whose Host header is not one of its
+  // trusted_domains, and it derives that list from this same mapper — so
+  // whatever this picks, Nextcloud already trusts.
   const nextcloudHostHeader = await sdk.host
     .get(
       effects,
@@ -32,43 +36,25 @@ export const main = sdk.setupMain(async ({ effects }) => {
 
         if (!ui) return null
 
-        const hostnames = [
-          ...new Set(
-            ui.addressInfo
-              .filter({
-                exclude: {
-                  kind: ['link-local', 'bridge'],
-                },
-              })
-              .format('hostname-info')
-              .map((entry) =>
-                entry.metadata.kind === 'ipv6'
-                  ? `[${entry.hostname}]`
-                  : entry.hostname,
-              ),
-          ),
-        ].sort()
-
-        return hostnames[0] ?? null
+        return (
+          [
+            ...new Set(
+              ui.addressInfo
+                .filter({ exclude: { kind: ['link-local', 'bridge'] } })
+                .format('hostname-info')
+                .map((entry) =>
+                  entry.metadata.kind === 'ipv6'
+                    ? `[${entry.hostname}]`
+                    : entry.hostname,
+                ),
+            ),
+          ]
+            .sort()
+            .at(0) ?? null
+        )
       },
     )
     .const()
-
-  if (nextcloudBridgeAddress) {
-    console.info('Resolved Nextcloud StartOS bridge address.')
-  } else {
-    console.info(
-      'Nextcloud bridge address is not currently available.',
-    )
-  }
-
-  if (nextcloudHostHeader) {
-    console.info('Resolved Nextcloud HTTP host identity.')
-  } else {
-    console.info(
-      'Nextcloud HTTP host identity is not currently available.',
-    )
-  }
 
   const subcontainer = sdk.SubContainer.of(
     effects,
@@ -82,40 +68,31 @@ export const main = sdk.setupMain(async ({ effects }) => {
     'main',
   )
 
-  const env: Record<string, string> = {}
-
-  if (nextcloudBridgeAddress) {
-    env.NEXTCLOUD_BRIDGE_ADDRESS =
-      nextcloudBridgeAddress
-  }
-
-  if (nextcloudHostHeader) {
-    env.NEXTCLOUD_HOST_HEADER =
-      nextcloudHostHeader
-  }
-
   return sdk.Daemons.of(effects).addDaemon('main', {
     subcontainer,
 
     exec: {
       command: sdk.useEntrypoint(),
-      env,
+      user: WORKER_USER,
+      env: {
+        ...(nextcloudBridgeAddress && {
+          NEXTCLOUD_BRIDGE_ADDRESS: nextcloudBridgeAddress,
+        }),
+        ...(nextcloudHostHeader && {
+          NEXTCLOUD_HOST_HEADER: nextcloudHostHeader,
+        }),
+      },
     },
 
     ready: {
-      display: null,
+      display: i18n('Print Queue'),
       fn: () =>
         sdk.healthCheck.runHealthScript(
-          [
-            'python3',
-            '-c',
-            'import os,sys; sys.exit(0 if os.path.exists("/tmp/cloud-print-bridge.ready") else 1)',
-          ],
+          ['sh', '-c', 'test -f /tmp/cloud-print-bridge.ready'],
           subcontainer,
           {
-            errorMessage: i18n(
-              'Cloud Print Bridge is waiting for configuration',
-            ),
+            message: () => i18n('Watching the Nextcloud print queue'),
+            errorMessage: i18n('The Nextcloud print queue is not reachable'),
           },
         ),
     },

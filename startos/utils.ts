@@ -1,7 +1,2 @@
-// Constants and helper functions shared across Cloud Print Bridge's
-// StartOS packaging code.
-//
-// Cloud Print Bridge currently exposes no user-facing network interface.
-// This value is retained for compatibility with the package scaffold and
-// can be removed later if it remains unused.
-export const uiPort = 80
+// The unprivileged account the image creates; StartOS does not read the image's USER.
+export const WORKER_USER = 'cloudprint'

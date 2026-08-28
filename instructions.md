@@ -38,7 +38,7 @@ The **Cloud Print** folder and its `Inbox`, `Processing`, `Printed` and `Failed`
 
 Put a file in `Cloud Print/Inbox`. Cloud Print Bridge picks it up on its next check — every 30 seconds by default — moves it to `Processing`, prints it, and moves it to `Printed`. One file is printed at a time, so a batch drains one job per check.
 
-Printing the same filename twice is fine: the second copy lands in `Printed` beside the first, with a number added.
+Printing the same filename over and over is fine — a weekly report always exported as `weekly_transactions.pdf`, say. Each copy lands in `Printed` beside the last, tagged with the time it printed, so you can tell them apart and nothing is ever overwritten.
 
 ### Printing only some pages of a PDF
 

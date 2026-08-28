@@ -512,19 +512,22 @@ def replace_queue_folder(href, old_folder, new_folder):
 
 
 def suffix_queue_href(href, attempt):
-    """Return the href with a numeric suffix on its filename."""
+    """Return the href with a disambiguating suffix on its filename."""
     prefix, folder, filename = split_queue_href(href)
 
     stem, extension = os.path.splitext(
         urllib.parse.unquote(filename)
     )
 
+    stamp = time.strftime("%Y-%m-%d %H%M%S")
+    suffix = stamp if attempt == 1 else f"{stamp} {attempt}"
+
     return "/".join(
         prefix
         + [
             folder,
             urllib.parse.quote(
-                f"{stem} ({attempt}){extension}",
+                f"{stem} ({suffix}){extension}",
                 safe="",
             ),
         ]
@@ -1169,8 +1172,11 @@ def finalize_job(config, processing_href, folder):
 
     # Overwrite: F is what makes the Inbox claim atomic, so a name already
     # present in the destination fails the move (412). Reprinting the same
-    # filename is ordinary, so land it beside the earlier copy.
-    for attempt in range(2, 12):
+    # filename is ordinary, so land it beside the earlier copy under the time
+    # it finished; a counter would run out on a weekly report. The retries
+    # only cover a collision within one second, which one job per cycle
+    # cannot produce.
+    for attempt in range(1, 12):
         status = move_dav_file(
             config,
             processing_href,

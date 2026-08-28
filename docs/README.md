@@ -45,7 +45,7 @@ Cloud Print/
 
 A file moves `Inbox → Processing` the moment it is claimed, which is what stops two cycles picking up the same file. It then lands in `Printed` or `Failed`. Nothing is ever deleted — clearing out `Printed` and `Failed` is yours to do.
 
-**Reprinting the same filename is fine.** If `Printed/invoice.pdf` already exists, the next one lands beside it as `Printed/invoice (2).pdf`.
+**Reprinting the same filename is fine, however often you do it.** If `Printed/invoice.pdf` is already there, the next one lands beside it as `Printed/invoice (2026-08-28 141530).pdf` — the time it finished. Nothing is overwritten and nothing is ever refused for want of a free name, so a report exported under the same name every day keeps working indefinitely.
 
 Anything sitting in `Processing` when the worker starts is treated as an interrupted job: it is moved to `Failed` without printing, because there is no way to know how much of it reached the printer.
 

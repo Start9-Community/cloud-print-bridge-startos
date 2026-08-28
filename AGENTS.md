@@ -35,4 +35,5 @@ verified, tried, and decided belongs in the commit message and the PR body.
   count stop applying to some of them.
 - **Never hold the raster in memory.** One 600-dpi sRGB Letter page is ~100 MB before PWG's line encoding.
 - **`Overwrite: F` on the Inbox→Processing MOVE is what makes claiming a job atomic** — don't relax it to
-  resolve a name collision. `finalize_job` retries under a suffixed name instead.
+  resolve a name collision. `finalize_job` retries under a timestamped name instead — a counter
+  would run out on a recurring report.

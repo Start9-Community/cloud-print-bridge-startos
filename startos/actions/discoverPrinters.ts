@@ -1,13 +1,16 @@
 import { configJson } from '../fileModels/config.json'
+import { i18n } from '../i18n'
 import { sdk } from '../sdk'
+import { WORKER_USER } from '../utils'
 
 const { InputSpec, Value } = sdk
 
 const inputSpec = InputSpec.of({
   printerDiscoveryCidr: Value.text({
-    name: 'Printer Discovery Network(s)',
-    description:
-      'One or more IPv4 networks to scan for IPP printers. Separate multiple networks with commas, for example 192.168.1.0/24 or 192.168.1.0/24, 10.20.30.0/24.',
+    name: i18n('Printer Discovery Network(s)'),
+    description: i18n(
+      'IPv4 networks to search, separated by commas — for example 192.168.1.0/24, 10.20.30.0/24.',
+    ),
     required: true,
     default: '',
     masked: false,
@@ -23,20 +26,16 @@ type DiscoveredPrinter = {
   host: string
 }
 
-function stringField(
-  value: Record<string, unknown>,
-  key: string,
-): string {
-  const field = value[key]
-  return typeof field === 'string' ? field : ''
-}
+const stringField = (record: Record<string, unknown>, key: string) =>
+  typeof record[key] === 'string' ? record[key] : ''
 
 export const discoverPrinters = sdk.Action.withInput(
   'discover-printers',
   {
-    name: 'Discover Printers',
-    description:
-      'Scan the configured network(s) for IPP printers and display their persistent UUIDs and IPP addresses.',
+    name: i18n('Discover Printers'),
+    description: i18n(
+      'Search the network for IPP printers and show their permanent UUIDs and addresses.',
+    ),
     warning: null,
     allowedStatuses: 'any',
     group: null,
@@ -45,166 +44,122 @@ export const discoverPrinters = sdk.Action.withInput(
 
   inputSpec,
 
-  async () => {
-    const current = await configJson.read().once()
-
-    return {
-      printerDiscoveryCidr:
-        current?.printerDiscoveryCidr ?? '',
-    }
-  },
+  async () => ({
+    printerDiscoveryCidr:
+      (await configJson.read().once())?.printerDiscoveryCidr ?? '',
+  }),
 
   async ({ effects, input }) => {
-    const discoveryNetworks =
-      input.printerDiscoveryCidr.trim()
+    const networks = input.printerDiscoveryCidr.trim()
 
-    if (!discoveryNetworks) {
+    if (!networks)
+      throw new Error(i18n('Enter at least one network to search.'))
+
+    const execution = await sdk.SubContainer.withTemp(
+      effects,
+      { imageId: 'main' },
+      sdk.Mounts.of(),
+      'discover-printers',
+      async (sub) =>
+        sub.exec(['python3', '/app/discover_printers.py', networks], {
+          user: WORKER_USER,
+        }),
+    )
+
+    if (execution.exitCode !== 0)
       throw new Error(
-        'Printer discovery network(s) are required.',
+        execution.stderr.toString().trim() || i18n('Printer discovery failed.'),
       )
-    }
-
-    const execution =
-      await sdk.SubContainer.withTemp(
-        effects,
-        { imageId: 'main' },
-        sdk.Mounts.of(),
-        'discover-printers',
-        async sub =>
-          sub.exec([
-            'python3',
-            '/app/discover_printers.py',
-            discoveryNetworks,
-          ]),
-      )
-
-    const stdout = execution.stdout.toString().trim()
-    const stderr = execution.stderr.toString().trim()
-
-    if (execution.exitCode !== 0) {
-      throw new Error(
-        stderr ||
-          'Printer discovery failed.',
-      )
-    }
 
     let parsed: unknown
 
     try {
-      parsed = JSON.parse(stdout)
+      parsed = JSON.parse(execution.stdout.toString().trim())
     } catch {
-      throw new Error(
-        'Printer discovery returned invalid output.',
-      )
+      throw new Error(i18n('Printer discovery returned unreadable output.'))
     }
 
-    if (!Array.isArray(parsed)) {
-      throw new Error(
-        'Printer discovery returned an unexpected result.',
-      )
-    }
+    if (!Array.isArray(parsed))
+      throw new Error(i18n('Printer discovery returned unreadable output.'))
 
-    const printers: DiscoveredPrinter[] = []
-
-    for (const item of parsed) {
-      if (
-        typeof item !== 'object' ||
-        item === null ||
-        Array.isArray(item)
-      ) {
-        continue
-      }
+    const printers = parsed.flatMap<DiscoveredPrinter>((item) => {
+      if (typeof item !== 'object' || item === null || Array.isArray(item))
+        return []
 
       const record = item as Record<string, unknown>
+      const uri = stringField(record, 'uri')
 
-      const printer: DiscoveredPrinter = {
-        name: stringField(record, 'name'),
-        model: stringField(record, 'model'),
-        info: stringField(record, 'info'),
-        uuid: stringField(record, 'uuid'),
-        uri: stringField(record, 'uri'),
-        host: stringField(record, 'host'),
-      }
+      return uri
+        ? [
+            {
+              name: stringField(record, 'name'),
+              model: stringField(record, 'model'),
+              info: stringField(record, 'info'),
+              uuid: stringField(record, 'uuid'),
+              uri,
+              host: stringField(record, 'host'),
+            },
+          ]
+        : []
+    })
 
-      if (printer.uri) {
-        printers.push(printer)
-      }
-    }
-
-    if (printers.length === 0) {
+    if (!printers.length)
       return {
-        version: '1',
-        title: 'Printer Discovery',
-        message:
-          'No IPP printers were found on the specified network(s).',
+        version: '1' as const,
+        title: i18n('Printer Discovery'),
+        message: i18n('No IPP printers answered on the network(s) you gave.'),
         result: {
           type: 'single' as const,
-          name: 'Result',
+          name: i18n('Result'),
           description: null,
-          value: 'No IPP printers found',
+          value: i18n('No printers found'),
           masked: false,
           copyable: false,
           qr: false,
         },
       }
-    }
-
-    const values = printers.flatMap(
-      (printer, index) => {
-        const label =
-          printer.name ||
-          printer.model ||
-          printer.host ||
-          `Printer ${index + 1}`
-
-        const descriptionParts = [
-          printer.model,
-          printer.info,
-          printer.host
-            ? `Host: ${printer.host}`
-            : '',
-        ].filter(Boolean)
-
-        const description =
-          descriptionParts.length > 0
-            ? descriptionParts.join(' — ')
-            : null
-
-        return [
-          {
-            type: 'single' as const,
-            name: `${label} — UUID`,
-            description,
-            value:
-              printer.uuid ||
-              'Printer did not advertise a UUID',
-            masked: false,
-            copyable: Boolean(printer.uuid),
-            qr: false,
-          },
-          {
-            type: 'single' as const,
-            name: `${label} — IPP URI`,
-            description: null,
-            value: printer.uri,
-            masked: false,
-            copyable: true,
-            qr: false,
-          },
-        ]
-      },
-    )
 
     return {
-      version: '1',
-      title: 'Discovered Printers',
-      message:
-        printers.length === 1
-          ? 'Found 1 IPP printer. Copy its UUID into Configure Cloud Print Bridge and select Locate Printer by UUID.'
-          : `Found ${printers.length} IPP printers. Copy the UUID of the printer you want into Configure Cloud Print Bridge and select Locate Printer by UUID.`,
+      version: '1' as const,
+      title: i18n('Discovered Printers'),
+      message: i18n(
+        'Copy the UUID of the printer you want into Configure Cloud Print Bridge, then choose Locate Printer by UUID.',
+      ),
       result: {
         type: 'group' as const,
-        value: values,
+        value: printers.flatMap((printer, index) => {
+          const label =
+            printer.name ||
+            printer.model ||
+            printer.host ||
+            `${i18n('Printer')} ${index + 1}`
+
+          const description =
+            [printer.model, printer.info, printer.host]
+              .filter(Boolean)
+              .join(' — ') || null
+
+          return [
+            {
+              type: 'single' as const,
+              name: `${label} — ${i18n('UUID')}`,
+              description,
+              value: printer.uuid || i18n('This printer advertises no UUID'),
+              masked: false,
+              copyable: !!printer.uuid,
+              qr: false,
+            },
+            {
+              type: 'single' as const,
+              name: `${label} — ${i18n('IPP URL')}`,
+              description: null,
+              value: printer.uri,
+              masked: false,
+              copyable: true,
+              qr: false,
+            },
+          ]
+        }),
       },
     }
   },

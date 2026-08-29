@@ -5,9 +5,11 @@ export const manifest = setupManifest({
   id: 'cloud-print-bridge',
   title: 'Cloud Print Bridge',
   license: 'AGPL-3.0-only',
-  packageRepo: 'https://github.com/purely-reclining/cloud-print-bridge-startos',
-  upstreamRepo: 'https://github.com/purely-reclining/cloud-print-bridge-startos',
-  marketingUrl: 'https://github.com/purely-reclining/cloud-print-bridge-startos',
+  packageRepo: 'https://github.com/Start9-Community/cloud-print-bridge-startos',
+  upstreamRepo:
+    'https://github.com/purely-reclining/cloud-print-bridge-startos',
+  marketingUrl:
+    'https://github.com/purely-reclining/cloud-print-bridge-startos',
   donationUrl: null,
   description: { short, long },
   volumes: ['main'],

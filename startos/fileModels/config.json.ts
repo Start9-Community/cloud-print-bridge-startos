@@ -13,10 +13,7 @@ export const supportedMedia = [
   'iso_b5_176x250mm',
 ] as const
 
-export const supportedColorModes = [
-  'color',
-  'monochrome',
-] as const
+export const supportedColorModes = ['color', 'monochrome'] as const
 
 export const supportedSides = [
   'one-sided',
@@ -24,54 +21,44 @@ export const supportedSides = [
   'two-sided-short-edge',
 ] as const
 
-export const supportedPrinterModes = [
-  'manual',
-  'uuid-discovery',
-] as const
+export const supportedPrinterModes = ['manual', 'uuid-discovery'] as const
 
-const shape = z.object({
+const shape = z.looseObject({
   nextcloudUsername: z.string().catch(''),
   nextcloudAppPassword: z.string().catch(''),
 
-  printerMode: z
-    .enum(supportedPrinterModes)
-    .catch('manual'),
+  printerMode: z.enum(supportedPrinterModes).catch('manual'),
 
   printerUrl: z.string().catch(''),
   printerDiscoveryCidr: z.string().catch(''),
   printerUuid: z.string().catch(''),
 
-  pollSeconds: z
-    .number()
-    .int()
-    .min(5)
-    .max(3600)
-    .catch(defaultPollSeconds),
+  pollSeconds: z.number().int().min(5).max(3600).catch(defaultPollSeconds),
 
-  media: z
-    .enum(supportedMedia)
-    .catch('na_letter_8.5x11in'),
+  media: z.enum(supportedMedia).catch('na_letter_8.5x11in'),
 
-  colorMode: z
-    .enum(supportedColorModes)
-    .catch('color'),
+  colorMode: z.enum(supportedColorModes).catch('color'),
 
-  sides: z
-    .enum(supportedSides)
-    .catch('one-sided'),
+  sides: z.enum(supportedSides).catch('one-sided'),
 
-  copies: z
-    .number()
-    .int()
-    .min(1)
-    .max(99)
-    .catch(1),
+  copies: z.number().int().min(1).max(99).catch(1),
 })
 
+export type Config = z.infer<typeof shape>
+
 export const configJson = FileHelper.json(
-  {
-    base: sdk.volumes.main,
-    subpath: './config.json',
-  },
+  { base: sdk.volumes.main, subpath: './config.json' },
   shape,
 )
+
+/** Whether the worker has everything it needs to reach Nextcloud and a printer. */
+export function isComplete(config: Partial<Config> | null): boolean {
+  const set = (value: string | undefined) => !!value?.trim()
+
+  if (!set(config?.nextcloudUsername) || !set(config?.nextcloudAppPassword))
+    return false
+
+  return config?.printerMode === 'uuid-discovery'
+    ? set(config.printerDiscoveryCidr) && set(config.printerUuid)
+    : set(config?.printerUrl)
+}

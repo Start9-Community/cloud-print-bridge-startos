@@ -1,241 +1,93 @@
 # Cloud Print Bridge
 
-Cloud Print Bridge turns a Nextcloud folder into a private print queue for an IPP printer reachable from your StartOS server.
+## Documentation
+
+- [Cloud Print Bridge reference](https://github.com/Start9-Community/cloud-print-bridge-startos/blob/main/docs/README.md) — the project's own documentation: every setting, the full page-selection syntax, printer requirements and limits.
+- [Nextcloud app passwords](https://docs.nextcloud.com/server/latest/user_manual/en/session_management.html#managing-devices) — the upstream guide to creating the dedicated password you will enter below.
 
 ## What you get on StartOS
 
-Cloud Print Bridge:
+Cloud Print Bridge adds a **Cloud Print** folder to your Nextcloud, and prints anything you drop into it.
 
-- uses Nextcloud as the queue
-- communicates with Nextcloud through StartOS service-to-service networking
-- converts common document formats when necessary
-- submits jobs directly to an IPP printer
-- tracks jobs through `Inbox`, `Processing`, `Printed`, and `Failed`
-- supports manual printer URLs, first-time IPP printer discovery, and UUID-based rediscovery
+Save a file into `Cloud Print/Inbox` from your phone, laptop, or the Nextcloud web page, and it comes out of your printer. Each file moves through `Processing` while it prints, then into `Printed` or `Failed`, so the folders themselves tell you what happened to every job.
 
-It does not provide a web interface.
+It handles PDFs, plain text, images (JPG, PNG, BMP, TIFF, WebP) and Office and OpenDocument files (DOC, DOCX, ODT, RTF, XLS, XLSX, ODS, PPT, PPTX, ODP) — converting each one on your server, never through an outside service.
 
-## Requirements
-
-- Nextcloud installed and running on the same StartOS server
-- a Nextcloud account and dedicated app password for Cloud Print Bridge
-- an IPP-compatible printer reachable from StartOS
+There is no web page to open. Everything is done from Nextcloud and from the two actions under **Actions & Config**.
 
 ## Getting set up
 
-### 1. Create the Nextcloud folders
+Nextcloud must be installed and running first; StartOS will not start Cloud Print Bridge without it. Until you finish step 3, Cloud Print Bridge shows a setup prompt in place of its usual controls.
 
-Create:
+1. **Create a Nextcloud app password.** In Nextcloud, open your personal **Security** settings and create an app password named for Cloud Print Bridge. Copy it — Nextcloud shows it only once. Use this rather than your account password, so you can revoke it on its own later.
 
-```text
-Cloud Print/
-├── Inbox/
-├── Processing/
-├── Printed/
-└── Failed/
-```
+2. **Find your printer.** Open **Actions & Config** and run **Discover Printers**. Enter the network your printer is on — usually something like `192.168.1.0/24` — and it lists every printer that answers, with a UUID and an address you can copy.
 
-### 2. Create a Nextcloud app password
+   If you already know your printer's address and it will not change, you can skip this.
 
-Create a dedicated Nextcloud app password for Cloud Print Bridge. Use that app password rather than the account's normal password.
+3. **Run Configure Cloud Print Bridge.** Enter your Nextcloud username and the app password from step 1, then choose how to reach the printer:
 
-### 3. Open the Configure action
+   - **Manual IPP URL** — paste the printer's address, for example `ipp://192.168.1.50/ipp/print`. Best when your printer has a fixed address or a DHCP reservation.
+   - **Locate Printer by UUID** — paste the UUID from step 2 and the network to search. Cloud Print Bridge finds the printer again by UUID even after its address changes. You can also give an address here; it is tried first, before searching.
 
-Enter:
+   Set the paper size, colour, one- or two-sided printing, and how many copies each job should produce, then save.
 
-- **Nextcloud Username**
-- **Nextcloud App Password**
-- **Printer Mode**
-- printer fields appropriate for the selected mode
-- **PDF Paper Size**
-- **PDF Color Mode**
-- **PDF Sides**
-- **PDF Copies**
-- **Polling Interval**
-
-You do not enter a Nextcloud URL. StartOS supplies the service-to-service connection automatically.
-
-## Printer setup
-
-### Discover Printers
-
-For first-time setup, open **Discover Printers** under Actions & Config.
-
-Enter one or more IPv4 networks that StartOS can route to. Cloud Print
-Bridge scans those networks for IPP printers and displays each discovered
-printer's name, persistent UUID, and IPP URI.
-
-Copy the UUID of the printer you want to use, then return to
-**Configure Cloud Print Bridge**.
-
-### Locate Printer by UUID
-
-Use this mode when you want Cloud Print Bridge to find the same printer
-even if its IP address changes.
-
-Configure:
-
-- **Printer Discovery Network(s)** — one or more IPv4 CIDRs separated by commas, semicolons, or spaces
-- **Printer UUID** — the printer's persistent IPP UUID
-- **Printer IPP URL** — optional fallback/last-known address
-
-Example discovery networks:
-
-```text
-192.168.1.0/24
-```
-
-or:
-
-```text
-192.168.1.0/24, 10.20.30.0/24
-```
-
-The combined discovery configuration may contain at most 4096 unique hosts.
-
-### Manual IPP URL
-
-Use this mode when the printer has a stable address.
-
-Example:
-
-```text
-ipp://192.168.1.50/ipp/print
-```
-
-A static address or DHCP reservation is recommended for manual mode.
+The **Cloud Print** folder and its `Inbox`, `Processing`, `Printed` and `Failed` subfolders appear in Nextcloud a moment later — Cloud Print Bridge creates them for you. Once they do, the **Print Queue** health check turns green and you are ready to print.
 
 ## Printing
 
-Place a supported file in:
+Put a file in `Cloud Print/Inbox`. Cloud Print Bridge picks it up on its next check — every 30 seconds by default — moves it to `Processing`, prints it, and moves it to `Printed`. One file is printed at a time, so a batch drains one job per check.
 
-```text
-Cloud Print/Inbox
-```
+Printing the same filename over and over is fine — a weekly report always exported as `weekly_transactions.pdf`, say. Each copy lands in `Printed` beside the last, tagged with the time it printed, so you can tell them apart and nothing is ever overwritten.
 
-Cloud Print Bridge claims it into `Processing`, converts it when necessary, submits it to the printer, and moves a confirmed successful job to `Printed`.
+### Printing only some pages of a PDF
 
-Supported formats:
-
-- PDF, TXT
-- JPG, JPEG, PNG, BMP, TIF, TIFF, WebP
-- DOC, DOCX, ODT, RTF
-- XLS, XLSX, ODS
-- PPT, PPTX, ODP
-
-## Printing selected PDF pages
-
-For native PDF files, add a page directive to the filename.
-
-Single page:
+Add a page directive to the filename:
 
 ```text
 Report [pages=8].pdf
-```
-
-Contiguous range:
-
-```text
 Report [pages=3-4].pdf
-```
-
-Non-contiguous pages:
-
-```text
 Report [pages=1-3,8,12-15].pdf
 ```
 
-Selections must:
+Pages must ascend and must exist in the document; an invalid directive fails the job rather than printing the whole thing. The [reference](https://github.com/Start9-Community/cloud-print-bridge-startos/blob/main/docs/README.md#choosing-pages-from-a-pdf) has the exact rules.
 
-- start at page 1 or later
-- use ascending ranges
-- remain strictly ascending
-- not overlap or duplicate pages
-- stay within the source PDF's page count
+This works on files that are already PDFs, not on Office documents converted into one.
 
-An invalid selection fails without printing.
+### When a job fails
 
-The original filename, including the directive, is retained when the source is moved to `Printed` or `Failed`.
+A job that fails moves to `Failed` and is **never reprinted automatically** — if the printer stopped partway, some pages may already be out. Look at the paper before you move the file back to `Inbox`.
 
-## Duplex printing
+The same applies to anything found in `Processing` when the service starts: it is treated as interrupted, moved to `Failed`, and not printed.
 
-Choose:
+## Actions
 
-- **One-sided**
-- **Two-sided - Long Edge**
-- **Two-sided - Short Edge**
+### Configure Cloud Print Bridge
 
-Selected-page PDFs are normalized into a temporary PDF before rasterization so they use the same duplex path as a complete PDF.
+Sets your Nextcloud account, your printer, and how jobs are printed. Run it again any time — a change takes effect on the next check, without interrupting a job that is already printing.
 
-## Queue safety
+### Discover Printers
 
-Normal successful flow:
-
-```text
-Inbox -> Processing -> Printed
-```
-
-Definite failure:
-
-```text
-Inbox -> Processing -> Failed
-```
-
-If Cloud Print Bridge cannot safely confirm the final printer outcome, the job is moved to `Failed` and is **not automatically retried**. Some pages or copies may already have printed.
-
-Before manually retrying any such job, inspect the physical printer/output first.
-
-If Cloud Print Bridge starts and finds files that were already in `Processing`, it treats them as orphaned/unconfirmed jobs and moves them to `Failed` without printing them.
-
-## Resource limits
-
-- maximum source file size: 100 MiB
-- maximum PDF page count: 200
-- maximum printer-discovery scan: 4096 unique IPv4 hosts
+Searches the networks you give it for printers and shows each one's name, permanent UUID and address, ready to copy. It changes nothing and prints nothing, so it is safe to run whenever you need it. A single `/24` network takes a few seconds.
 
 ## Troubleshooting
 
-### Waiting for configuration
+### The Print Queue check is red
 
-Open **Configure Cloud Print Bridge** and verify the required fields for the selected printer mode.
+Cloud Print Bridge cannot reach your Nextcloud print folders. Almost always the username or app password is wrong, or the app password has been revoked — create a fresh one and run **Configure Cloud Print Bridge** again. The service log names the error.
 
-### Waiting for Nextcloud
+### A file stays in Inbox
 
-Confirm Nextcloud is installed, running, and healthy in StartOS.
+Check that the file type is one of the supported ones, and look at the log. A file with an unsupported extension is left where it is.
 
-### Cannot check Inbox / authentication failures
+### A file goes to Failed
 
-Verify the Nextcloud username and app password. If a previously working app password stops authenticating, create a fresh dedicated app password and update Cloud Print Bridge.
+The log entries around the job say why: an invalid page directive, a document that would not convert, a printer that could not be reached, or a print whose outcome could not be confirmed.
 
-### File stays in Inbox
+### Discover Printers finds nothing
 
-Check the Cloud Print Bridge logs and confirm the file extension is supported.
+Check that the printer is switched on, that the network you entered is the one it is on, and that your StartOS server can reach it. Printers must speak IPP on port 631, which most network printers made in the last decade do.
 
-### File moves to Failed
+### The printer is found but the job fails
 
-Read the nearby log entries. Common causes include invalid page selection, conversion failure, an unreachable printer, or an unconfirmed print outcome.
-
-If the printer may have received part of the job, check the physical output before retrying.
-
-### Discover Printers finds no printers
-
-Verify:
-
-- the printer is powered on
-- StartOS can route to the configured IPv4 network
-- TCP port 631/IPP is reachable
-- the discovery ranges are correct and do not exceed the host limit
-
-### Locate Printer by UUID fails
-
-Verify:
-
-- the configured UUID matches the desired printer
-- the printer is powered on
-- StartOS can route to the configured IPv4 network
-- TCP port 631/IPP is reachable
-- the discovery ranges are correct and do not exceed the host limit
-
-### Manual printer URL fails
-
-Verify the printer address and IPP path. If its address changed, update the URL or switch to Locate Printer by UUID.
+Cloud Print Bridge sends PWG Raster, the format used by AirPrint and IPP Everywhere. A printer that only understands its manufacturer's own format will reject the job — see [printer requirements](https://github.com/Start9-Community/cloud-print-bridge-startos/blob/main/docs/README.md#printer-requirements). If your printer's address begins `ipps://` and it uses its own self-signed certificate, use `ipp://` instead; the traffic stays on your own network either way.

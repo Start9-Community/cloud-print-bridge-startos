@@ -1,5 +1,5 @@
-import { i18n } from '../i18n'
 import { configJson, defaultPollSeconds } from '../fileModels/config.json'
+import { i18n } from '../i18n'
 import { sdk } from '../sdk'
 
 const { InputSpec, Value } = sdk
@@ -26,65 +26,65 @@ const inputSpec = InputSpec.of({
   }),
 
   printerMode: Value.select({
-    name: 'Printer Mode',
-    description:
-      'Choose a manually configured IPP URL or locate a known printer by its persistent IPP UUID. Use Discover Printers to find available printer UUIDs.',
+    name: i18n('Printer Mode'),
+    description: i18n(
+      'Send to a fixed IPP address, or find the printer by its permanent UUID each time. Run Discover Printers to learn that UUID.',
+    ),
     default: 'manual',
     values: {
-      manual: 'Manual IPP URL',
-      'uuid-discovery': 'Locate Printer by UUID',
+      manual: i18n('Manual IPP URL'),
+      'uuid-discovery': i18n('Locate Printer by UUID'),
     },
   }),
 
   printerUrl: Value.text({
     name: i18n('Printer IPP URL'),
-    description:
-      'Manual printer IPP URL. In UUID discovery mode this may also serve as a fallback or last-known address.',
+    description: i18n(
+      'The printer address, for example ipp://192.168.1.50/ipp/print. In UUID mode this is tried first, before searching.',
+    ),
     required: false,
     default: '',
     masked: false,
   }),
 
   printerDiscoveryCidr: Value.text({
-    name: 'Printer Discovery Network(s)',
-    description:
-      'One or more IPv4 networks to search. Use the Discover Printers action to find available IPP printers and their UUIDs. Separate multiple networks with commas, for example 192.168.1.0/24 or 192.168.1.0/24, 10.20.30.0/24.',
+    name: i18n('Printer Discovery Network(s)'),
+    description: i18n(
+      'IPv4 networks to search, separated by commas — for example 192.168.1.0/24, 10.20.30.0/24.',
+    ),
     required: false,
     default: '',
     masked: false,
   }),
 
   printerUuid: Value.text({
-    name: 'Printer UUID',
-    description:
-      'Persistent IPP printer UUID. Use the Discover Printers action to obtain this value, for example urn:uuid:12345678-1234-1234-1234-123456789abc.',
+    name: i18n('Printer UUID'),
+    description: i18n(
+      'The printer’s permanent IPP UUID, as reported by Discover Printers — for example urn:uuid:12345678-1234-1234-1234-123456789abc.',
+    ),
     required: false,
     default: '',
     masked: false,
   }),
 
   media: Value.select({
-    name: i18n('PDF Paper Size'),
-    description: i18n(
-      'Default paper size used when converting PDF files to printer raster.',
-    ),
+    name: i18n('Paper Size'),
+    description: i18n('Paper size every job is rendered onto.'),
     default: 'na_letter_8.5x11in',
     values: {
       'na_letter_8.5x11in': i18n('Letter (8.5 x 11 in)'),
-      'iso_a4_210x297mm': i18n('A4 (210 x 297 mm)'),
+      iso_a4_210x297mm: i18n('A4 (210 x 297 mm)'),
       'na_legal_8.5x14in': i18n('Legal (8.5 x 14 in)'),
       'na_executive_7.25x10.5in': i18n('Executive (7.25 x 10.5 in)'),
-      'iso_a5_148x210mm': i18n('A5 (148 x 210 mm)'),
-      'iso_a6_105x148mm': i18n('A6 (105 x 148 mm)'),
-      'iso_b5_176x250mm': i18n('B5 (176 x 250 mm)'),
+      iso_a5_148x210mm: i18n('A5 (148 x 210 mm)'),
+      iso_a6_105x148mm: i18n('A6 (105 x 148 mm)'),
+      iso_b5_176x250mm: i18n('B5 (176 x 250 mm)'),
     },
   }),
 
   colorMode: Value.select({
-    name: i18n('PDF Color Mode'),
-    description: i18n(
-      'Choose whether PDF files are rasterized in color or grayscale.',
-    ),
+    name: i18n('Color Mode'),
+    description: i18n('Print in color or in grayscale.'),
     default: 'color',
     values: {
       color: i18n('Color'),
@@ -93,10 +93,8 @@ const inputSpec = InputSpec.of({
   }),
 
   sides: Value.select({
-    name: i18n('PDF Sides'),
-    description: i18n(
-      'Choose one-sided printing or duplex printing for PDF files.',
-    ),
+    name: i18n('Sides'),
+    description: i18n('One-sided or duplex printing.'),
     default: 'one-sided',
     values: {
       'one-sided': i18n('One-sided'),
@@ -106,7 +104,7 @@ const inputSpec = InputSpec.of({
   }),
 
   copies: Value.number({
-    name: i18n('PDF Copies'),
+    name: i18n('Copies'),
     description: i18n(
       'Number of copies to print. Copies are submitted as separate print jobs for printer compatibility.',
     ),
@@ -147,33 +145,24 @@ export const configure = sdk.Action.withInput(
 
   inputSpec,
 
-  async () => {
-    const current = await configJson.read().once()
-
-    return (
-      current ?? ({
-        nextcloudUsername: '',
-        nextcloudAppPassword: '',
-        printerMode: 'manual',
-        printerUrl: '',
-        printerDiscoveryCidr: '',
-        printerUuid: '',
-        media: 'na_letter_8.5x11in',
-        colorMode: 'color',
-        sides: 'one-sided',
-        copies: 1,
-        pollSeconds: defaultPollSeconds,
-      } as const)
-    )
-  },
+  async () => (await configJson.read().once()) ?? {},
 
   async ({ effects, input }) => {
-    await configJson.merge(effects, {
+    const config = {
       ...input,
-      printerUrl: input.printerUrl ?? '',
-      printerDiscoveryCidr:
-        input.printerDiscoveryCidr ?? '',
-      printerUuid: input.printerUuid ?? '',
-    })
+      printerUrl: input.printerUrl?.trim() ?? '',
+      printerDiscoveryCidr: input.printerDiscoveryCidr?.trim() ?? '',
+      printerUuid: input.printerUuid?.trim() ?? '',
+    }
+
+    if (config.printerUrl && !/^ipps?:\/\/./.test(config.printerUrl))
+      throw new Error(i18n('Printer IPP URL must begin with ipp:// or ipps://'))
+
+    if (config.printerMode === 'uuid-discovery' && !config.printerDiscoveryCidr)
+      throw new Error(
+        i18n('Locating a printer by UUID needs at least one discovery network'),
+      )
+
+    await configJson.merge(effects, config)
   },
 )

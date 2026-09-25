@@ -61,9 +61,11 @@ export const discoverPrinters = sdk.Action.withInput(
       sdk.Mounts.of(),
       'discover-printers',
       async (sub) =>
-        sub.exec(['python3', '/app/discover_printers.py', networks], {
-          user: WORKER_USER,
-        }),
+        sub.exec(
+          ['python3', '/app/discover_printers.py', networks],
+          { user: WORKER_USER },
+          null,
+        ),
     )
 
     if (execution.exitCode !== 0)

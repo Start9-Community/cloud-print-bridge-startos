@@ -1,16 +1,18 @@
 import { IMPOSSIBLE, VersionInfo } from '@start9labs/start-sdk'
 
 export const current = VersionInfo.of({
-  version: '0.6.0:1',
+  version: '0.6.0:2',
   releaseNotes: {
-    en_US: 'Discover Printers no longer fails when searching large networks.',
-    es_ES: '«Descubrir impresoras» ya no falla al buscar en redes grandes.',
+    en_US:
+      "- Configure Cloud Print Bridge's Printer Mode, Paper Size, Color Mode and Sides settings explain what each choice does.",
+    es_ES:
+      '- Los ajustes Modo de impresora, Tamaño de papel, Modo de color y Caras de «Configurar Cloud Print Bridge» explican qué hace cada opción.',
     de_DE:
-      '„Drucker suchen“ schlägt beim Durchsuchen großer Netzwerke nicht mehr fehl.',
+      '- Die Einstellungen Druckermodus, Papierformat, Farbmodus und Seiten in „Cloud Print Bridge konfigurieren“ erklären, was jede Auswahl bewirkt.',
     pl_PL:
-      'Akcja „Wykryj drukarki” nie kończy się już błędem podczas przeszukiwania dużych sieci.',
+      '- Ustawienia Tryb drukarki, Rozmiar papieru, Tryb koloru i Strony w akcji „Skonfiguruj Cloud Print Bridge” wyjaśniają, co oznacza każdy wybór.',
     fr_FR:
-      "« Découvrir les imprimantes » n'échoue plus lors de la recherche sur de grands réseaux.",
+      '- Les réglages Mode d’imprimante, Format de papier, Mode couleur et Faces de « Configurer Cloud Print Bridge » expliquent l’effet de chaque choix.',
   },
   migrations: {
     up: async ({ effects }) => {},

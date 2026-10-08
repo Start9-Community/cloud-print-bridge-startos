@@ -9,7 +9,7 @@ const dict = {
 
   // Configure action — printer
   'Printer Mode': 4,
-  'Send to a fixed IPP address, or find the printer by its permanent UUID each time. Run Discover Printers to learn that UUID.': 5,
+  '- Manual IPP URL: every job goes to the Printer IPP URL.\n- Locate Printer by UUID: every job goes to the printer with the Printer UUID, looked up on the discovery networks, so it is still found after its address changes. Run Discover Printers to learn the UUID.': 5,
   'Manual IPP URL': 6,
   'Locate Printer by UUID': 7,
   'Printer IPP URL': 8,
@@ -21,7 +21,7 @@ const dict = {
 
   // Configure action — print options
   'Paper Size': 14,
-  'Paper size every job is rendered onto.': 15,
+  'Every job is rendered onto this size, and the printer is asked for exactly this paper, so choose one the printer has loaded.\n- Letter: the usual size in North America\n- A4: the usual size elsewhere\n- Legal: longer than Letter, for legal documents\n- Executive: smaller than Letter\n- A5: half an A4 sheet\n- A6: half an A5 sheet\n- B5: between A5 and A4': 15,
   'Letter (8.5 x 11 in)': 16,
   'A4 (210 x 297 mm)': 17,
   'Legal (8.5 x 14 in)': 18,
@@ -30,11 +30,11 @@ const dict = {
   'A6 (105 x 148 mm)': 21,
   'B5 (176 x 250 mm)': 22,
   'Color Mode': 23,
-  'Print in color or in grayscale.': 24,
+  '- Color: pages print in full color.\n- Monochrome: pages are converted to grayscale. A monochrome job is smaller, so a document too large to print in color may still fit.': 24,
   Color: 25,
   Monochrome: 26,
   Sides: 27,
-  'One-sided or duplex printing.': 28,
+  '- One-sided: prints on one side of each sheet.\n- Two-sided - Long Edge: prints on both sides, bound on the long edge like a book.\n- Two-sided - Short Edge: prints on both sides, bound on the short edge like a notepad.\nTwo-sided printing needs a printer that can print on both sides.': 28,
   'One-sided': 29,
   'Two-sided - Long Edge': 30,
   'Two-sided - Short Edge': 31,

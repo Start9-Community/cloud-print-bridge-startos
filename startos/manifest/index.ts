@@ -19,14 +19,4 @@ export const manifest = setupManifest({
       arch: ['x86_64', 'aarch64'],
     },
   },
-  dependencies: {
-    nextcloud: {
-      description: 'Provides the WebDAV print queue.',
-      optional: false,
-      metadata: {
-        title: 'Nextcloud',
-        icon: 'https://raw.githubusercontent.com/Start9Labs/nextcloud-startos/next/icon.svg',
-      },
-    },
-  },
 })

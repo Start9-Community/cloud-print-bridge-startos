@@ -28,7 +28,7 @@ const inputSpec = InputSpec.of({
   printerMode: Value.select({
     name: i18n('Printer Mode'),
     description: i18n(
-      'Send to a fixed IPP address, or find the printer by its permanent UUID each time. Run Discover Printers to learn that UUID.',
+      '- Manual IPP URL: every job goes to the Printer IPP URL.\n- Locate Printer by UUID: every job goes to the printer with the Printer UUID, looked up on the discovery networks, so it is still found after its address changes. Run Discover Printers to learn the UUID.',
     ),
     default: 'manual',
     values: {
@@ -69,7 +69,9 @@ const inputSpec = InputSpec.of({
 
   media: Value.select({
     name: i18n('Paper Size'),
-    description: i18n('Paper size every job is rendered onto.'),
+    description: i18n(
+      'Every job is rendered onto this size, and the printer is asked for exactly this paper, so choose one the printer has loaded.\n- Letter: the usual size in North America\n- A4: the usual size elsewhere\n- Legal: longer than Letter, for legal documents\n- Executive: smaller than Letter\n- A5: half an A4 sheet\n- A6: half an A5 sheet\n- B5: between A5 and A4',
+    ),
     default: 'na_letter_8.5x11in',
     values: {
       'na_letter_8.5x11in': i18n('Letter (8.5 x 11 in)'),
@@ -84,7 +86,9 @@ const inputSpec = InputSpec.of({
 
   colorMode: Value.select({
     name: i18n('Color Mode'),
-    description: i18n('Print in color or in grayscale.'),
+    description: i18n(
+      '- Color: pages print in full color.\n- Monochrome: pages are converted to grayscale. A monochrome job is smaller, so a document too large to print in color may still fit.',
+    ),
     default: 'color',
     values: {
       color: i18n('Color'),
@@ -94,7 +98,9 @@ const inputSpec = InputSpec.of({
 
   sides: Value.select({
     name: i18n('Sides'),
-    description: i18n('One-sided or duplex printing.'),
+    description: i18n(
+      '- One-sided: prints on one side of each sheet.\n- Two-sided - Long Edge: prints on both sides, bound on the long edge like a book.\n- Two-sided - Short Edge: prints on both sides, bound on the short edge like a notepad.\nTwo-sided printing needs a printer that can print on both sides.',
+    ),
     default: 'one-sided',
     values: {
       'one-sided': i18n('One-sided'),

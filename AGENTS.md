@@ -17,19 +17,26 @@ Freshly scaffolded? Work the
 (or <https://docs.start9.com/packaging/new-package-checklist.html>) from top to bottom. It is a
 guide page, not a file in this repo — read it, don't copy it in.
 
-Keep `README.md` (technical reference for an AI support or administering agent),
-`instructions.md` (the StartOS quick-start) and `docs/README.md` (the application's own
-reference, linked from `instructions.md`) in sync with your changes. A change to `app/`
-usually lands in `docs/README.md`; a change to `startos/` usually does not.
+Keep `README.md` (technical reference for an AI support or administering agent) and
+`instructions.md` (end-user docs) in sync with your changes. This file restates neither:
+whoever changes the package has both, so it carries only what they don't — repo mechanics,
+a change that looks right and is not, where the next thing gets added, a naming trap, a
+build or test invocation particular to this repo.
 
-**Bugs and feature requests are GitHub issues on this repo** — file them as you find them.
+**Fix a defect you spot rather than reporting it** — you have the package open and the
+context to be sure. File **a GitHub issue on this repo** only when the call isn't yours to
+make: you can't pin the cause down, two defensible fixes exist, or it's too large to ride on
+the work in hand. An open issue is a report, not a queue — implement one when you're asked
+to or when it's labelled `Approved`, then close it with `Closes #<n>`.
+
 Don't record work in the repo instead: no `TODO.md`, no `NOTES.md`, no `PLAN.md`. What you
 verified, tried, and decided belongs in the commit message and the PR body.
 
 ## This repo
 
-- **The worker in `app/` is this project's upstream, not a vendored copy.** A behavior change there is an
-  application change and needs a new upstream version, not just a downstream revision — see `UPDATING.md`.
+- **A behavior change in `app/` is an application change**: it needs a new upstream version, not just a
+  downstream revision (see `UPDATING.md`), and usually lands in `docs/README.md`, the application's own
+  reference, which `instructions.md` links to.
 - **Route a new input format to PDF.** Every format converges on one print path (source → PDF → PWG Raster →
   IPP Create-Job/Send-Document); a second path is how the configured paper size, colour mode, duplex and copy
   count stop applying to some of them.

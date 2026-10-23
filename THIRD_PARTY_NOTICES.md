@@ -57,7 +57,7 @@ Cloud Print Bridge uses Pillow for image handling.
 
 Audited Python package:
 
-- `Pillow` — `12.3.0`
+- `Pillow` — `13.0.0`
 
 Pillow's installed package metadata identifies its license expression as:
 

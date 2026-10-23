@@ -117,6 +117,7 @@ export const discoverPrinters = sdk.Action.withInput(
           masked: false,
           copyable: false,
           qr: false,
+          launchable: false,
         },
       }
 
@@ -149,6 +150,7 @@ export const discoverPrinters = sdk.Action.withInput(
               masked: false,
               copyable: !!printer.uuid,
               qr: false,
+              launchable: false,
             },
             {
               type: 'single' as const,
@@ -158,6 +160,7 @@ export const discoverPrinters = sdk.Action.withInput(
               masked: false,
               copyable: true,
               qr: false,
+              launchable: false,
             },
           ]
         }),

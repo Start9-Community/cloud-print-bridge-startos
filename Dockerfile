@@ -13,7 +13,7 @@ RUN apt-get update \
         fonts-crosextra-caladea \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir Pillow==12.3.0 reportlab==4.4.2
+RUN pip install --no-cache-dir Pillow==13.0.0 reportlab==4.4.2
 
 # Every job is parsed by LibreOffice, Ghostscript and Pillow, so the worker runs
 # unprivileged. StartOS ignores this image's USER; `main.ts` names the account.
